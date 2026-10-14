@@ -22,6 +22,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.tv.R;
+import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.smartyoutubetv2.tv.util.ViewUtil;
 
 public class IconHeaderItemPresenter extends RowHeaderPresenter {
@@ -46,6 +47,16 @@ public class IconHeaderItemPresenter extends RowHeaderPresenter {
 
         View view = inflater.inflate(R.layout.icon_header_item, null);
         view.setAlpha(mUnselectedAlpha); // Initialize icons to be at half-opacity.
+
+        int backgroundResId = Helpers.getThemeAttr(viewGroup.getContext(), R.attr.sideMenuItemBackground);
+
+        if (backgroundResId > 0) {
+            int horizontal = (int) (14 * viewGroup.getResources().getDisplayMetrics().density);
+            int vertical = (int) (5 * viewGroup.getResources().getDisplayMetrics().density);
+            view.setBackgroundResource(backgroundResId);
+            view.setPadding(horizontal, vertical, horizontal, vertical);
+            view.getBackground().mutate().setAlpha(0);
+        }
 
         return new ViewHolder(view);
     }
@@ -96,6 +107,10 @@ public class IconHeaderItemPresenter extends RowHeaderPresenter {
     protected void onSelectLevelChanged(RowHeaderPresenter.ViewHolder holder) {
         holder.view.setAlpha(mUnselectedAlpha + holder.getSelectLevel() *
                 (1.0f - mUnselectedAlpha));
+
+        if (holder.view.getBackground() != null) {
+            holder.view.getBackground().setAlpha((int) (holder.getSelectLevel() * 255));
+        }
     }
 
     private final RequestListener<Drawable> mErrorListener = new RequestListener<Drawable>() {

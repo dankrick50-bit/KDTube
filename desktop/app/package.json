@@ -1,0 +1,9 @@
+{
+  "name": "kdtube",
+  "productName": "KDTube",
+  "version": "32.64.0",
+  "description": "KDTube for the PC: YouTube without the clutter, with picture and sound options",
+  "main": "main.js",
+  "license": "MIT",
+  "private": true
+}

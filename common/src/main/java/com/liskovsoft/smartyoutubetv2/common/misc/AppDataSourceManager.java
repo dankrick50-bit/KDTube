@@ -41,6 +41,11 @@ public class AppDataSourceManager {
     public List<SettingsItem> getSettingItems(Context context) {
         List<SettingsItem> settingItems = new ArrayList<>();
 
+        if (TvInterfaceSettingsPresenter.isSupported(context)) {
+            settingItems.add(new SettingsItem(
+                    context.getString(R.string.tv_interface), () -> TvInterfaceSettingsPresenter.instance(context).show(), R.drawable.settings_main_ui));
+        }
+
         settingItems.add(new SettingsItem(
                 context.getString(R.string.settings_accounts), () -> AccountSettingsPresenter.instance(context).show(), R.drawable.settings_account));
         settingItems.add(new SettingsItem(

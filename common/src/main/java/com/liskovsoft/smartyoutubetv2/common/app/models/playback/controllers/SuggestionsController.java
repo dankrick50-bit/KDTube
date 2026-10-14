@@ -238,6 +238,12 @@ public class SuggestionsController extends BasePlayerController {
         }
 
         clearSuggestionsIfNeeded(video);
+
+        // A file of the device: YouTube knows nothing about it
+        if (video != null && video.isLocalFile()) {
+            return;
+        }
+
         loadMetadata(video, metadata -> updateSuggestions(metadata, video));
     }
 

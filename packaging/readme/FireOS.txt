@@ -1,0 +1,72 @@
+KDTube @VERSION@ for Fire OS
+========================
+
+  Fire-TV-Stick-4K/   for the Fire TV Stick 4K (and every other Fire TV: Stick, 4K Max,
+                      Cube, Fire TV televisions). Fire TV runs 32-bit apps only.
+  Fire-HD-10-2023/    for the Fire HD 10 tablet of 2023 (64-bit; also fine for the
+                      Fire HD 8 / Max 11 of the last years).
+
+Both devices have 3 GB of RAM or less. The app sizes its video buffer and its caches
+for that by itself, gives memory back when the device runs short, and leaves when it
+sits unused in the background and the system needs the memory.
+
+Fire TV: allow it (once)
+------------------------
+1. Settings > My Fire TV > About: select the name of the device and press the
+   middle button 7 times. "Developer Options" appears one level up.
+   (On older Fire OS versions it is there already.)
+2. Settings > My Fire TV > Developer Options: switch on "ADB Debugging".
+3. Settings > My Fire TV > About > Network: write down the IP address,
+   e.g. 192.168.1.50. The computer has to be in the same network.
+
+Fire TV: install from a computer (the best way)
+-----------------------------------------------
+The tools are in the folder Android/From-a-PC.
+Windows:  run KDTube-tv-installer-windows-x64-....exe, type the IP address, Install.
+Ubuntu:   install KDTube-tv-installer-ubuntu-all-....deb, then: kdtube-install 192.168.1.50
+
+The first time the TV shows "Allow USB debugging?": choose "Always allow" and OK.
+The installer picks the right build, prepares it for the processor of the device
+and starts it.
+
+Fire TV: without a computer
+---------------------------
+1. Install the free app "Downloader" from the Amazon Appstore.
+2. Settings > My Fire TV > Developer Options > Install unknown apps: allow "Downloader".
+3. Put the apk of Fire-TV-Stick-4K somewhere it can be downloaded from (a cloud drive
+   with a direct link, e.g.), enter the link in Downloader and install.
+   Or copy the file to a USB stick and open it with a file manager on the Fire TV.
+
+Fire tablet
+-----------
+1. Copy the apk of Fire-HD-10-2023 to the tablet (USB cable, cloud drive, e-mail).
+2. Open it in the "Files" app. The tablet asks to allow installing from this source
+   (Settings > Security & Privacy > Apps from Unknown Sources): allow it, install.
+   Or use the tools of Android/From-a-PC with the tablet connected by USB
+   ("USB debugging" on: Settings > Device Options, tap "Serial Number" 7 times,
+   then Developer Options).
+
+Afterwards
+----------
+The app is in the list of the apps as "KDTube". On Fire TV: hold the Home button >
+Apps, press the Menu button on it to move it to the front.
+"ADB Debugging" can be switched off again after the installation.
+
+Sound and picture on these two devices
+--------------------------------------
+* Fire TV Stick 4K: Dolby Vision files are given to the Dolby Vision decoder of the
+  stick. Dolby and DTS sound is handed to a receiver / sound bar that understands
+  it; otherwise the stick or the app decodes it.
+  (This was tested on emulators, which have no such hardware: not on a real stick.)
+* Fire HD 10 (tried on a real one, Fire OS 8): YouTube plays at 1080p, decoded by
+  the chip of the tablet. It has no Dolby Vision decoder, such files play as HDR /
+  standard video. DTS and Dolby TrueHD files play through the decoder of the app.
+  "Virtual surround" is on by itself with headphones or the tablet's speakers.
+  "YouTube TV interface" (Settings) works with touch; it needs about twice the
+  memory and more processor than the app's own player.
+
+Casting
+-------
+The cast button of the player lists the screens of the home network, also Fire TV
+sticks and Google TV boxes. To play from a phone on a Fire TV with KDTube:
+Settings > Remote control.

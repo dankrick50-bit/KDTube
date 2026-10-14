@@ -51,6 +51,7 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
     private FormatItem mVideoFormat;
     private FormatItem mTempVideoFormat;
     private FormatItem mAudioFormat;
+    private boolean mIsBestAudioApplied;
     private FormatItem mSubtitleFormat;
     private int mVideoBufferType;
     private final List<SubtitleStyle> mSubtitleStyles = new ArrayList<>();
@@ -714,7 +715,10 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
         // Android 4 (probably some others) doesn't support opus (ac3 will be reverted to opus)
         // Note, 5.1 mp4a doesn't work in 5.1 mode
         // Use opus (ac3 fallback) on modern devices. vp9 and opus should be supported at the same time?
-        return DeviceHelpers.isVP9ResolutionSupported(2160) ? FormatItem.AUDIO_51_AC3 : FormatItem.AUDIO_HQ_MP4A;
+        // MOD: the best track of each video for what the sound goes to (see TrackSelectorManager.findBestAudio).
+        // The formats the device has no decoder for (Dolby) are decoded by the app, and Opus needs Android 5.
+        return Build.VERSION.SDK_INT >= 21 ? FormatItem.AUDIO_BEST :
+                DeviceHelpers.isVP9ResolutionSupported(2160) ? FormatItem.AUDIO_51_AC3 : FormatItem.AUDIO_HQ_MP4A;
     }
 
     public FormatItem getDefaultVideoFormat() {
@@ -847,6 +851,14 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
         mLastAudioLanguages = Helpers.parseStrList(split, 60);
         mIsVideoFlipEnabled = Helpers.parseBoolean(split, 61, false);
         mIsAudioDelayEnabled = Helpers.parseBoolean(split, 62, false);
+        mIsBestAudioApplied = Helpers.parseBoolean(split, 63, false);
+
+        // Once: the choice of the audio track moves to "the best the video has". Whoever picks a format
+        // in the player afterwards keeps it.
+        if (!mIsBestAudioApplied) {
+            mIsBestAudioApplied = true;
+            mAudioFormat = getDefaultAudioFormat();
+        }
 
         if (speeds != null) {
             for (String speedSpec : speeds) {
@@ -884,7 +896,7 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
                 mIsNumberKeySeekEnabled, mIsSkip24RateEnabled, mAfrPauseMs, mIsLiveChatEnabled, mLastSubtitleFormats, mLastSpeed, mRotationAngle,
                 mZoomPercents, mPlaybackMode, mAudioLanguage, mSubtitleLanguage, mEnabledSubtitlesPerChannel, mIsSubtitlesPerChannelEnabled,
                 mIsSpeedPerChannelEnabled, Helpers.mergeArray(mSpeeds.values().toArray()), mPitch, mIsSkipShortsEnabled, mLastAudioLanguages,
-                mIsVideoFlipEnabled, mIsAudioDelayEnabled
+                mIsVideoFlipEnabled, mIsAudioDelayEnabled, mIsBestAudioApplied
         ));
     }
 

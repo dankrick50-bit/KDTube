@@ -14,7 +14,9 @@ import com.google.android.exoplayer2.trackselection.DefaultTrackSelector.Selecti
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelection.Definition;
+import com.google.android.exoplayer2.util.MimeTypes;
 import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.smartyoutubetv2.common.misc.AudioOutputInfo;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.AudioTrack;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.MediaTrack;
@@ -468,6 +470,15 @@ public class TrackSelectorManager implements TrackSelectorCallback {
 
         Renderer renderer = mRenderers[originTrack.rendererIndex];
 
+        if (originTrack instanceof AudioTrack && originTrack.format != null && FormatItem.BEST_AUDIO_CODEC.equals(originTrack.format.codecs)) {
+            MediaTrack best = findBestAudio(renderer, originTrack);
+
+            if (best != null) {
+                Log.d(TAG, "findBestMatch: The best audio: " + best.format);
+                return best;
+            }
+        }
+
         MediaTrack result = createAutoSelection(originTrack.rendererIndex);
 
         if (originTrack.format != null) { // not auto selection
@@ -891,6 +902,67 @@ public class TrackSelectorManager implements TrackSelectorCallback {
         }
 
         return renderer.selectedTrack;
+    }
+
+    /**
+     * The best sound a video has, for what the sound goes to.<br/>
+     * <b>A sound system, or a device with the Dolby decoder of its maker</b> (a Fire tablet: it does its own
+     * Dolby Atmos processing for the speakers and for headphones): the surround track, Dolby Digital Plus
+     * before Dolby Digital before the rest.<br/>
+     * <b>Two channels</b> (headphones, TV speakers) without such a decoder: the stereo track with the highest
+     * bitrate; it's the stereo mix of the makers of the video, which beats a surround track folded down.<br/>
+     * Never the "stable volume" variants: they are the same sound with its dynamics pressed flat.
+     */
+    private MediaTrack findBestAudio(Renderer renderer, MediaTrack originTrack) {
+        boolean isSurroundWanted = AudioOutputInfo.isSurroundOutput(mContext) || AudioOutputInfo.hasDeviceDecoder(MimeTypes.AUDIO_E_AC3);
+        MediaTrack best = null;
+        long bestScore = Long.MIN_VALUE;
+
+        for (MediaTrack[] trackGroup : filterByLanguage(renderer.mediaTracks, originTrack)) {
+            if (trackGroup == null) {
+                continue;
+            }
+
+            for (MediaTrack mediaTrack : trackGroup) {
+                if (mediaTrack == null || mediaTrack.format == null || hasPlaybackGlitch(mediaTrack) || isErrorInAudio(mediaTrack)) {
+                    continue;
+                }
+
+                long score = getAudioScore(mediaTrack.format, isSurroundWanted);
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = mediaTrack;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private static long getAudioScore(Format format, boolean isSurroundWanted) {
+        String codecs = format.codecs != null ? format.codecs : "";
+        boolean isDolby = codecs.startsWith("ec-3") || codecs.startsWith("ac-3");
+        boolean isSurround = isDolby || format.channelCount > 2 || TrackSelectorUtil.is51Audio(format);
+        long bitrate = Math.max(format.bitrate, 0);
+        // At the same bitrate Opus is the better codec
+        long score = codecs.startsWith("opus") ? bitrate * 5 / 4 : bitrate;
+
+        if (!TrackSelectorUtil.isDrc(format)) {
+            score += 10_000_000L;
+        }
+
+        if (isSurround) {
+            score += isSurroundWanted ? 100_000_000L : -100_000_000L;
+
+            if (codecs.startsWith("ec-3")) {
+                score += 2_000_000L;
+            } else if (codecs.startsWith("ac-3")) {
+                score += 1_000_000L;
+            }
+        }
+
+        return score;
     }
 
     private boolean hasPlaybackGlitch(MediaTrack mediaTrack) {

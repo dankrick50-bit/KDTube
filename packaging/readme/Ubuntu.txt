@@ -1,0 +1,56 @@
+KDTube @VERSION@ for Ubuntu and other Linux systems (the PC edition, 64-bit Intel / AMD)
+==================================================================================
+
+NOTE: these packages were built on a Windows machine and checked for their
+structure there. They have not been started on a real Ubuntu system yet.
+
+Ubuntu, Debian, Mint (the .deb)
+-------------------------------
+    sudo apt install ./KDTube-ubuntu-amd64-v@VERSION@-@STAMP@.deb
+
+"apt" brings the few system libraries it needs. Start it from the menu ("KDTube")
+or with the command:  kdtube
+
+Remove:  sudo apt remove kdtube
+The settings and the sign-in stay in ~/.config/KDTube until you delete that folder.
+
+Other systems (the .tar.gz)
+---------------------------
+    tar xzf KDTube-linux-x64-v@VERSION@-@STAMP@.tar.gz
+    ./KDTube/kdtube
+
+If it stops with a message about the "SUID sandbox helper", see KDTube/README.txt.
+
+Using it
+--------
+  Arrow keys, Enter      move and choose, like the remote of a TV
+  Esc or Alt+Left        back
+  F2                     picture, sound and other settings
+  F11                    full screen
+
+First start: YouTube asks who is watching. "Sign in with your phone" shows a code
+for yt.be/activate, or choose "Watch as guest".
+
+Play on a TV (casting)
+----------------------
+The cast button in the bar on top lists the screens of the home network: smart
+TVs, Fire TV sticks, Chromecast / Google TV / Android TV boxes, consoles. Click
+one: the video that plays here continues there. With a firewall (ufw) that blocks
+incoming packets nothing may be found: use the TV code then (on the TV: YouTube >
+Settings > Link with TV code), it needs no search.
+From a phone to this PC: in YouTube here, Settings (the gear) > Link with TV code.
+
+Video decoding by the graphics card
+-----------------------------------
+The app asks for it (VA-API). Whether it happens depends on the drivers of the
+system: Intel and AMD usually work with the package "va-driver-all" (the .deb
+recommends it). With the closed NVIDIA driver video is decoded by the processor,
+which is fine up to 1080p and heavy at 4K.
+
+What it doesn't do
+------------------
+* No downloader (the Android app has one).
+* Films and shows that YouTube sells or rents don't play.
+* What the player did is written to ~/.config/KDTube/kdtube-player.log.
+* "Device media" plays MP4, WebM, most MKV, MP3, AAC, FLAC, Opus. Files with Dolby
+  or DTS sound are handed to the player of the system (VLC, mpv).

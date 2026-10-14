@@ -38,6 +38,10 @@ public final class Video {
     public static final String TERTIARY_TEXT_DELIM = "•";
     public static final long MAX_LIVE_DURATION_MS = 24 * 60 * 60 * 1_000;
     public static final float MIN_WATCHED_PERCENT = 10; // min value for immediately closed videos
+    /**
+     * The ids of the files of the device (see LocalMediaScanner). They mean nothing to YouTube.
+     */
+    public static final String LOCAL_ID_PREFIX = "local-";
     private static final int MAX_AUTHOR_LENGTH_CHARS = 20;
     private static final String BLACK_PLACEHOLDER_URL = "https://via.placeholder.com/1280x720/000000/000000";
     public int id;
@@ -62,6 +66,10 @@ public final class Video {
     public String author;
     public String badge;
     public String previewUrl;
+    /**
+     * The video is played from this file (see the downloads)
+     */
+    public String localUri;
     public float percentWatched = -1;
     public int startTimeSeconds;
     public MediaItem mediaItem;
@@ -182,6 +190,7 @@ public final class Video {
         video.badge = item.badge;
         video.hasNewContent = item.hasNewContent;
         video.previewUrl = item.previewUrl;
+        video.localUri = item.localUri;
         video.playlistId = item.playlistId;
         video.playlistIndex = item.playlistIndex;
         video.playlistParams = item.playlistParams;
@@ -486,6 +495,13 @@ public final class Video {
         return Helpers.mergeObj(id, category, title, videoId, null, playlistId, channelId, bgImageUrl, cardImageUrl,
                 null, playlistParams, sectionId, getReloadPageKey(), itemType, secondTitle, previewUrl, percentWatched,
                 metadataTitle, metadataSecondTitle, badge, isLive, channelGroupId, searchQuery);
+    }
+
+    /**
+     * @return true if this is a file of the device that has nothing to do with YouTube (not a downloaded video)
+     */
+    public boolean isLocalFile() {
+        return localUri != null && videoId != null && videoId.startsWith(LOCAL_ID_PREFIX);
     }
 
     public boolean hasVideo() {

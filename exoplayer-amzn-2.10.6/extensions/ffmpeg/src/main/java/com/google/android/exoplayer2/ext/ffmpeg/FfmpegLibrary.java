@@ -33,8 +33,8 @@ public final class FfmpegLibrary {
 
   private static final String TAG = "FfmpegLibrary";
 
-  private static final LibraryLoader LOADER =
-      new LibraryLoader("avutil", "avresample", "avcodec", "ffmpeg");
+  // MOD: one library with FFmpeg linked in (see packaging/ffmpeg/build-ffmpeg.sh)
+  private static final LibraryLoader LOADER = new LibraryLoader("ffmpeg");
 
   private FfmpegLibrary() {}
 

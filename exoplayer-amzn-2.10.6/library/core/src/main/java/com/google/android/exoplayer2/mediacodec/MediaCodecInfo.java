@@ -198,7 +198,16 @@ public final class MediaCodecInfo {
    * @throws MediaCodecUtil.DecoderQueryException Thrown if an error occurs while querying decoders.
    */
   public boolean isFormatSupported(Format format) throws MediaCodecUtil.DecoderQueryException {
-    if (!isCodecSupported(format.codecs)) {
+    // MOD: Dolby Vision. The codec string is the one of Dolby Vision: it says nothing to the ordinary
+    // decoders that play the compatible layer, and the decoders of Dolby Vision are asked for the profile.
+    if (MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
+      if (MimeTypes.VIDEO_DOLBY_VISION.equals(mimeType)
+          && !isDolbyVisionProfileSupported(
+              com.google.android.exoplayer2.video.DolbyVisionConfig.getProfileNumber(format))) {
+        logNoSupport("codec.dolbyVisionProfile, " + format.codecs);
+        return false;
+      }
+    } else if (!isCodecSupported(format.codecs)) {
       return false;
     }
 
@@ -223,6 +232,28 @@ public final class MediaCodecInfo {
               && (format.channelCount == Format.NO_VALUE
                   || isAudioChannelCountSupportedV21(format.channelCount)));
     }
+  }
+
+  /**
+   * MOD: whether this decoder (of Dolby Vision) lists the profile. If there is insufficient
+   * information to decide, returns true.
+   *
+   * @param profileNumber The number of the profile: 4, 5, 7, 8, 9...
+   */
+  public boolean isDolbyVisionProfileSupported(int profileNumber) {
+    CodecProfileLevel[] profileLevels = getProfileLevels();
+    if (profileNumber < 0 || profileNumber > 30 || profileLevels.length == 0
+        || AmazonQuirks.shouldSkipProfileLevelCheck()) {
+      return true;
+    }
+    // CodecProfileLevel.DolbyVisionProfileDvavPer = 1 (profile 0), DvavPen = 2 (profile 1)...
+    int profile = 1 << profileNumber;
+    for (CodecProfileLevel capabilities : profileLevels) {
+      if (capabilities.profile == profile) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

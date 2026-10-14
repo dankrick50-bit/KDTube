@@ -48,5 +48,9 @@ public interface PlayerEngine extends PlayerConstants {
     void setAspectRatio(float ratio);
     void setRotationAngle(int angle);
     void setVideoFlipEnabled(boolean enabled);
+    /**
+     * @param level one of PlayerTweaksData.SHARPEN_*
+     */
+    void setSharpenLevel(int level);
     void setVideoGravity(int gravity);
 }

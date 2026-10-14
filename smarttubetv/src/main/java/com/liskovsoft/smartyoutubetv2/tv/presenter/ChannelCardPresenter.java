@@ -49,7 +49,7 @@ public class ChannelCardPresenter extends LongClickPresenter {
         mSelectedBackgroundColor =
                 ContextCompat.getColor(context, Helpers.getThemeAttr(context, R.attr.cardSelectedBackground));
         mSelectedTextColor =
-                ContextCompat.getColor(context, R.color.card_selected_text_grey);
+                ViewUtil.getThemeColor(context, R.attr.cardSelectedTextColor, R.color.card_selected_text_grey);
 
         updateDimensions(context);
 

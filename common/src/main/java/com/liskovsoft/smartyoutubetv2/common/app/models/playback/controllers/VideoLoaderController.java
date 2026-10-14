@@ -22,9 +22,12 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoActionPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.views.PlaybackView;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.MemoryKeeper;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
+
+import java.util.Collections;
 
 import io.reactivex.disposables.Disposable;
 
@@ -36,6 +39,7 @@ public class VideoLoaderController extends BasePlayerController {
     private SuggestionsController mSuggestionsController;
     private ErrorFixerController mErrorFixerController;
     private Disposable mFormatInfoAction;
+    private MediaItemFormatInfo mFormatInfo;
     private final Runnable mReloadVideo = () -> {
         getMainController().onNewVideo(getVideo());
     };
@@ -245,6 +249,13 @@ public class VideoLoaderController extends BasePlayerController {
         }
     }
 
+    /**
+     * @return the formats of the current video, null if they aren't loaded yet (or the video is played from a file)
+     */
+    public MediaItemFormatInfo getFormatInfo() {
+        return mFormatInfo;
+    }
+
     private void loadFormatInfo(Video video) {
         if (getPlayer() == null) {
             return;
@@ -254,6 +265,17 @@ public class VideoLoaderController extends BasePlayerController {
         //getPlayer().showProgressBar(true);
         Utils.post(mShowProgressBar);
         disposeActions();
+        mFormatInfo = null;
+
+        // A file on the device isn't copied into memory ahead of time
+        MemoryKeeper.instance(getContext()).setLocalSource(video.localUri != null);
+
+        if (video.localUri != null) {
+            Log.d(TAG, "Loading downloaded video from the file...");
+            getPlayer().openUrlList(Collections.singletonList(video.localUri));
+            getPlayer().showBackground(null); // show the video surface (the same as after the regular loading)
+            return;
+        }
 
         ServiceManager service = YouTubeServiceManager.instance();
         MediaItemService mediaItemManager = service.getMediaItemService();
@@ -273,6 +295,8 @@ public class VideoLoaderController extends BasePlayerController {
         }
 
         String bgImageUrl = null;
+
+        mFormatInfo = formatInfo;
 
         getVideo().sync(formatInfo);
 

@@ -13,6 +13,8 @@
     <item name="action_pip" type="id"/>
     <item name="action_info" type="id"/>
     <item name="action_share" type="id"/>
+    <item name="action_download" type="id"/>
+    <item name="action_cast" type="id"/>
     <item name="action_sound_off" type="id"/>
     <item name="action_chat" type="id"/>
     <item name="action_playback_queue" type="id"/>

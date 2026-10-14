@@ -7,6 +7,10 @@
     <attr name="cardSelectedBackground" format="reference"/>
     <attr name="cardProgressStyle" format="reference"/>
     <attr name="appLogo" format="reference"/>
+    <!-- The look of the cards and of the side menu (see the Modern scheme) -->
+    <attr name="cardSelectedTextColor" format="reference"/>
+    <attr name="sideMenuTextAppearance" format="reference"/>
+    <attr name="sideMenuItemBackground" format="reference"/>
 
     <!-- Increase spacing between items in GridView -->
     <style name="GridViewStyle" parent="Widget.Leanback.GridItems.VerticalGridView">
@@ -26,6 +30,9 @@
 
     <!-- Color scheme: Teal (Default) -->
     <style name="App.Theme.Leanback.Player" parent="Theme.Leanback">
+        <item name="cardSelectedTextColor">@color/card_selected_text_grey</item>
+        <item name="sideMenuTextAppearance">@style/TextAppearance.Leanback.Header</item>
+        <item name="sideMenuItemBackground">@null</item>
         <!-- <item name="android:windowBackground">@null</item> -->
         <!-- NOTE: don't use transparency because the BackgroundManager won't work (BackgroundManager:778) -->
         <item name="android:windowBackground">@android:color/black</item>
@@ -47,6 +54,9 @@
         <item name="android:windowContentOverlay">@null</item>
     </style>
     <style name="App.Theme.Leanback.Browse" parent="Theme.Leanback.Browse">
+        <item name="cardSelectedTextColor">@color/card_selected_text_grey</item>
+        <item name="sideMenuTextAppearance">@style/TextAppearance.Leanback.Header</item>
+        <item name="sideMenuItemBackground">@null</item>
         <item name="android:windowBackground">@color/shelf_background_dark</item>
         <item name="brandColor">@color/fastlane_background_dark</item>
         <item name="brandAccentColor">@color/fastlane_background</item>
@@ -70,6 +80,9 @@
         <item name="android:windowContentOverlay">@null</item>
     </style>
     <style name="App.Theme.Leanback.GuidedStep" parent="Theme.Leanback.GuidedStep">
+        <item name="cardSelectedTextColor">@color/card_selected_text_grey</item>
+        <item name="sideMenuTextAppearance">@style/TextAppearance.Leanback.Header</item>
+        <item name="sideMenuItemBackground">@null</item>
         <item name="android:windowBackground">@color/shelf_background_dark</item>
         <item name="shelfBackground">@color/shelf_background_dark</item>
         <!-- Disable activity transition animations -->
@@ -81,6 +94,9 @@
     </style>
     <!-- AppDialogFragment style -->
     <style name="App.Theme.Leanback.Preferences.Base" parent="Theme.Leanback">
+        <item name="cardSelectedTextColor">@color/card_selected_text_grey</item>
+        <item name="sideMenuTextAppearance">@style/TextAppearance.Leanback.Header</item>
+        <item name="sideMenuItemBackground">@null</item>
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Leanback</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
@@ -248,4 +264,64 @@
         <item name="cardSelectedBackground">@color/card_selected_background_white_grey</item>
     </style>
     <!--  End Color scheme: Dark Blue (OLED)  -->
+
+    <!--  Color scheme: Modern. Ink blue surfaces, one accent color, light focused card, no logo.  -->
+    <style name="App.Theme.Modern.Browse" parent="App.Theme.Leanback.Browse">
+        <item name="android:windowBackground">@color/scheme_modern_background</item>
+        <item name="brandColor">@color/scheme_modern_surface</item>
+        <item name="brandAccentColor">@color/scheme_modern_accent</item>
+        <item name="shelfBackground">@color/scheme_modern_background</item>
+        <item name="cardDefaultBackground">@color/scheme_modern_surface</item>
+        <item name="cardSelectedBackground">@color/scheme_modern_card_selected</item>
+        <item name="cardSelectedTextColor">@color/scheme_modern_text</item>
+        <item name="imageCardViewTitleStyle">@style/Widget.Modern.ImageCardView.TitleStyle</item>
+        <item name="imageCardViewContentStyle">@style/Widget.Modern.ImageCardView.ContentStyle</item>
+        <item name="sideMenuTextAppearance">@style/TextAppearance.Modern.SideMenu</item>
+        <item name="sideMenuItemBackground">@drawable/side_menu_item_modern</item>
+        <item name="rowHeaderStyle">@style/Widget.Modern.Row.Header</item>
+        <item name="cardProgressStyle">@style/ProgressBarHorizontal.Modern</item>
+        <item name="android:colorAccent" tools:targetApi="21">@color/scheme_modern_accent</item>
+        <item name="appLogo">@null</item>
+    </style>
+    <style name="App.Theme.Modern.Player" parent="App.Theme.Leanback.Player">
+        <item name="playbackProgressPrimaryColor">@color/scheme_modern_accent</item>
+        <item name="playbackProgressSecondaryColor">@color/scheme_modern_accent_light</item>
+        <item name="playbackControlsIconHighlightColor">@color/scheme_modern_accent</item>
+        <item name="shelfBackground">@color/scheme_modern_background</item>
+        <item name="cardDefaultBackground">@color/scheme_modern_surface</item>
+        <item name="cardSelectedBackground">@color/scheme_modern_card_selected</item>
+        <item name="cardSelectedTextColor">@color/scheme_modern_text</item>
+        <item name="imageCardViewTitleStyle">@style/Widget.Modern.ImageCardView.TitleStyle</item>
+        <item name="imageCardViewContentStyle">@style/Widget.Modern.ImageCardView.ContentStyle</item>
+        <item name="rowHeaderStyle">@style/Widget.Modern.Row.Header</item>
+        <item name="cardProgressStyle">@style/ProgressBarHorizontal.Modern</item>
+        <item name="android:colorAccent" tools:targetApi="21">@color/scheme_modern_accent</item>
+    </style>
+    <style name="App.Theme.Modern.Preferences" parent="App.Theme.Leanback.Preferences">
+        <item name="android:colorPrimary" tools:targetApi="21">@color/scheme_modern_surface</item>
+        <item name="android:colorAccent" tools:targetApi="21">@color/scheme_modern_accent</item>
+    </style>
+    <style name="Widget.Modern.ImageCardView.TitleStyle" parent="Widget.Leanback.ImageCardView.TitleStyle">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+    <style name="Widget.Modern.ImageCardView.ContentStyle" parent="Widget.Leanback.ImageCardView.ContentStyle">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textColor">@color/scheme_modern_text_secondary</item>
+    </style>
+    <style name="TextAppearance.Modern.SideMenu" parent="TextAppearance.Leanback.Header">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+    <style name="TextAppearance.Modern.Row.Header" parent="TextAppearance.Leanback.Row.Header">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/scheme_modern_text_secondary</item>
+    </style>
+    <style name="Widget.Modern.Row.Header" parent="Widget.Leanback.Row.Header">
+        <item name="android:textAppearance">@style/TextAppearance.Modern.Row.Header</item>
+    </style>
+    <style name="ProgressBarHorizontal.Modern" parent="@android:style/Widget.ProgressBar.Horizontal">
+        <item name="android:progressDrawable">@drawable/progress_bar_modern</item>
+    </style>
+    <!--  End Color scheme: Modern  -->
 </resources>

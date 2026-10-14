@@ -1,0 +1,69 @@
+KDTube @VERSION@ for Windows (the PC edition)
+======================================
+
+Install
+-------
+1. Double click KDTube-windows-x64-setup-v@VERSION@-@STAMP@.exe.
+   Windows may say "Windows protected your PC": the setup isn't signed with a
+   certificate. Choose "More info", then "Run anyway".
+2. Press Install. It installs for you only (no administrator password) and puts
+   KDTube into the Start menu.
+
+Without a window, for scripts:   ...setup.exe /silent [/nodesktop] [/nolaunch]
+
+First start
+-----------
+YouTube asks who is watching. "Sign in with your phone" shows a code: open
+yt.be/activate on a phone or another computer and type it in. Or "Watch as guest".
+
+Using it
+--------
+  Arrow keys, Enter      move and choose, like the remote of a TV
+  Esc or Alt+Left        back
+  F2                     picture, sound and other settings
+  F11                    full screen
+  F5                     reload
+
+The bar on top: "YouTube" and "Device media" (the video and music files of this PC;
+add folders there, or switch on "all drives" in the settings).
+
+Picture: the app asks YouTube for the resolution that fills the window. In full
+screen on a 4K display that is 4K. "Sharpen" makes edges crisper.
+Sound: YouTube's best stereo track (Opus); volume levelling (also a night mode),
+dialogue boost, wide stereo.
+Adverts are taken out; sponsored parts of videos are skipped (SponsorBlock).
+
+Play on a TV (casting)
+----------------------
+The cast button in the bar on top lists the screens of the home network: smart
+TVs, Fire TV sticks, Chromecast / Google TV / Android TV boxes, consoles. Click
+one: the video that plays here continues there, played by the YouTube app of that
+screen. If Windows asks whether KDTube may use the network, allow it for private
+networks.
+A screen that isn't listed: open YouTube on it > Settings > Link with TV code, and
+type the code into the box below the list.
+From a phone to this PC: in YouTube here, Settings (the gear) > Link with TV code,
+then choose it in the YouTube app of the phone.
+
+Memory: the settings show what the app holds. Its cache is kept on the disk with a
+size limit and is emptied every time the app closes.
+
+What it doesn't do
+------------------
+* It has no downloader (the Android app has one).
+* Films and shows that YouTube sells or rents don't play (they need a protection
+  module that isn't a part of this app). The app says so when it happens.
+* Dolby Atmos and Dolby Vision: YouTube doesn't send them to this kind of player.
+
+If a video doesn't play
+-----------------------
+F5 reloads. What the player did is written to %APPDATA%\KDTube\kdtube-player.log:
+send that file along when reporting a problem.
+* "Device media" plays what the built-in player knows: MP4, WebM, most MKV, MP3,
+  AAC, FLAC, Opus. For files with Dolby or DTS sound it offers to open them in the
+  player of the system (VLC, e.g.).
+
+Remove
+------
+Settings > Apps > Installed apps > KDTube > Uninstall. It asks whether the
+settings and the sign-in should go too (they are in %APPDATA%\KDTube).

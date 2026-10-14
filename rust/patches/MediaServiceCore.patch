@@ -1,0 +1,2168 @@
+diff --git a/youtubeapi/src/main/assets/nsigsolver/lazy.ast.js b/youtubeapi/src/main/assets/nsigsolver/lazy.ast.js
+new file mode 100644
+index 00000000..f19db132
+--- /dev/null
++++ b/youtubeapi/src/main/assets/nsigsolver/lazy.ast.js
+@@ -0,0 +1,285 @@
++/*!
++ * Lazy AST for the challenge solvers.
++ *
++ * The solvers parse the whole player (megabytes of minified js) into an AST. Inside V8 that
++ * tree needs 130-190 MB, although the solvers look at a tiny part of it and most of the code
++ * is written back unchanged.
++ *
++ * If the host provides the positions of all function bodies (global __playerSpans:
++ * "start,end,start,end..." in source order, see rust/kdtube-core/src/jsfn.rs) then:
++ *   - the parser gets a skeleton of the player where the function bodies are cut out
++ *   - a body is parsed when (and only when) somebody reads it. The result is read only
++ *     and only the most recent ones are kept.
++ *   - the generator writes untouched bodies as they were in the source
++ *
++ * The solvers aren't changed and don't know about it: 'meriyah' and 'astring' are wrapped.
++ * Should be loaded after those two and before the solvers.
++ *
++ * Safety net: an attempt to modify a lazily parsed body throws (the nodes are frozen, the
++ * solvers are strict mode code). The host runs the solver again without __playerSpans then.
++ */
++(function (global) {
++  'use strict';
++
++  var realMeriyah = global.meriyah;
++  var realAstring = global.astring;
++
++  if (!realMeriyah || !realAstring || !realAstring.GENERATOR) {
++    return;
++  }
++
++  var FUNCTIONS = { FunctionDeclaration: true, FunctionExpression: true, ArrowFunctionExpression: true };
++  // What is left of a body in the skeleton: {"<MARK><index of the span>"}
++  var MARK = 'kd-lazy-body#';
++  // Not worth it for the tiny ones
++  var MIN_BODY_LENGTH = 48;
++  // Parsed bodies that are kept. Somebody who reads the same body twice in a row should get the
++  // same object. NOTE: WeakRef can't be used for that. Its target lives till the end of the
++  // current job and the whole solver is a single job.
++  var CACHE_SIZE = 16;
++  var cacheKeys = new Int32Array(CACHE_SIZE).fill(-1);
++  var cacheValues = new Array(CACHE_SIZE).fill(null);
++  var cachePos = 0;
++  // lazy block -> index of its span
++  var rawOf = new WeakMap();
++  var source = null;
++  var starts = null;
++  var ends = null;
++  // index of the first span that isn't inside of the given one
++  var next = null;
++
++  function prepare(code, spansText) {
++    var parts = spansText.split(',');
++    var count = parts.length >> 1;
++    var s = new Int32Array(count);
++    var e = new Int32Array(count);
++    var n = new Int32Array(count);
++    var stack = [];
++
++    for (var i = 0; i < count; i++) {
++      s[i] = +parts[2 * i];
++      e[i] = +parts[2 * i + 1];
++
++      // must be a pair of braces, in source order
++      if (!(e[i] > s[i] + 1) || code.charCodeAt(s[i]) !== 123 || code.charCodeAt(e[i] - 1) !== 125 || (i > 0 && s[i] <= s[i - 1])) {
++        return false;
++      }
++
++      while (stack.length && s[i] >= e[stack[stack.length - 1]]) {
++        n[stack.pop()] = i;
++      }
++
++      if (stack.length && e[i] > e[stack[stack.length - 1]]) {
++        return false; // overlapping
++      }
++
++      stack.push(i);
++    }
++
++    while (stack.length) {
++      n[stack.pop()] = count;
++    }
++
++    source = code;
++    starts = s;
++    ends = e;
++    next = n;
++    cacheKeys.fill(-1);
++    cacheValues.fill(null);
++
++    return count > 0;
++  }
++
++  /**
++   * Text of the region where the function bodies are replaced with their marks.
++   * A body that takes more than a half of the region is left as is (but not the ones inside of it):
++   * that's the function that wraps the whole player.
++   */
++  function skeleton(from, to, first, stop) {
++    var limit = (to - from) / 2;
++    var parts = [];
++    var pos = from;
++
++    (function visit(idx, end) {
++      while (idx < end) {
++        var s = starts[idx];
++        var e = ends[idx];
++
++        if (e - s > limit) {
++          visit(idx + 1, next[idx]);
++        } else if (e - s >= MIN_BODY_LENGTH) {
++          parts.push(source.slice(pos, s), '{"' + MARK + idx + '"}');
++          pos = e;
++        }
++
++        idx = next[idx];
++      }
++    })(first, stop);
++
++    parts.push(source.slice(pos, to));
++
++    return parts.join('');
++  }
++
++  /**
++   * @return index of the span if that's what is left of a body in the skeleton
++   */
++  function markOf(block) {
++    var statements = block.body;
++
++    if (statements.length === 1 && statements[0].type === 'ExpressionStatement') {
++      var expr = statements[0].expression;
++
++      if (expr.type === 'Literal' && typeof expr.value === 'string' && expr.value.startsWith(MARK)) {
++        var idx = +expr.value.slice(MARK.length);
++
++        if (idx >= 0 && idx < starts.length) {
++          return idx;
++        }
++      }
++    }
++
++    return -1;
++  }
++
++  function lazyBlock(idx, isAsync, isGenerator) {
++    var block = { type: 'BlockStatement' };
++
++    Object.defineProperty(block, 'body', {
++      enumerable: true,
++      get: function () {
++        for (var i = 0; i < CACHE_SIZE; i++) {
++          if (cacheKeys[i] === idx) {
++            return cacheValues[i];
++          }
++        }
++
++        var statements = parseBody(idx, isAsync, isGenerator);
++
++        cacheKeys[cachePos] = idx;
++        cacheValues[cachePos] = statements;
++        cachePos = (cachePos + 1) % CACHE_SIZE;
++
++        return statements;
++      }
++    });
++
++    rawOf.set(block, idx);
++
++    return Object.freeze(block);
++  }
++
++  /**
++   * Replaces what is left of the bodies with the lazy ones
++   */
++  function install(root, freeze) {
++    var stack = [root];
++
++    while (stack.length) {
++      var node = stack.pop();
++
++      if (Array.isArray(node)) {
++        for (var i = 0; i < node.length; i++) {
++          if (node[i] !== null && typeof node[i] === 'object') {
++            stack.push(node[i]);
++          }
++        }
++      } else {
++        if (FUNCTIONS[node.type] === true && node.body && node.body.type === 'BlockStatement') {
++          var idx = markOf(node.body);
++
++          if (idx !== -1) {
++            node.body = lazyBlock(idx, node.async === true, node.generator === true);
++          }
++        }
++
++        for (var key in node) {
++          var value = node[key];
++
++          // nodes and lists of nodes only (not a RegExp etc)
++          if (value !== null && typeof value === 'object' && (Array.isArray(value) || typeof value.type === 'string') && !rawOf.has(value)) {
++            stack.push(value);
++          }
++        }
++      }
++
++      if (freeze) {
++        Object.freeze(node);
++      }
++    }
++  }
++
++  function parseBody(idx, isAsync, isGenerator) {
++    var text = skeleton(starts[idx], ends[idx], idx + 1, next[idx]);
++    var block;
++
++    if (/\bsuper\s*\(/.test(text)) {
++      // only a constructor of a derived class can call it
++      block = realMeriyah.parse('class a extends b{constructor()' + text + '}').body[0].body.body[0].value.body;
++    } else {
++      // a method: 'super.x', 'new.target', 'arguments' and 'return' are fine
++      block = realMeriyah.parse('({' + (isAsync ? 'async ' : '') + (isGenerator ? '*' : '') + 'm()' + text + '})').body[0].expression.properties[0].value.body;
++    }
++
++    install(block.body, true);
++
++    return block.body;
++  }
++
++  function lazyParse(code, spansText) {
++    try {
++      if (!prepare(code, spansText)) {
++        return null;
++      }
++
++      var program = realMeriyah.parse(skeleton(0, code.length, 0, starts.length));
++
++      install(program, false);
++
++      return program;
++    } catch (e) {
++      // The positions don't fit. Not a problem: the regular way.
++      source = null;
++      return null;
++    }
++  }
++
++  var lazyGenerator = Object.assign({}, realAstring.GENERATOR, {
++    BlockStatement: function (node, state) {
++      var idx = rawOf.get(node);
++
++      if (idx !== undefined) {
++        state.write(source.slice(starts[idx], ends[idx]));
++      } else {
++        realAstring.GENERATOR.BlockStatement.call(this, node, state);
++      }
++    }
++  });
++
++  global.meriyah = Object.assign({}, realMeriyah, {
++    parse: function (code, options) {
++      if (options === undefined && typeof global.__playerSpans === 'string' && code === global.__player) {
++        var program = lazyParse(code, global.__playerSpans);
++
++        // for the host: was it used?
++        global.__lazyAst = program !== null;
++
++        if (program !== null) {
++          return program;
++        }
++      }
++
++      return realMeriyah.parse.apply(realMeriyah, arguments);
++    }
++  });
++
++  global.astring = Object.assign({}, realAstring, {
++    generate: function (node, options) {
++      if (source === null) {
++        return realAstring.generate(node, options);
++      }
++
++      return realAstring.generate(node, Object.assign({ generator: lazyGenerator }, options));
++    }
++  });
++})(globalThis);
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JaywayNode.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JaywayNode.java
+new file mode 100644
+index 00000000..201f757f
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JaywayNode.java
+@@ -0,0 +1,140 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++import com.google.gson.JsonArray;
++import com.google.gson.JsonElement;
++import com.google.gson.JsonNull;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonPrimitive;
++import com.google.gson.internal.LazilyParsedNumber;
++import com.jayway.jsonpath.DocumentContext;
++import com.jayway.jsonpath.ParseContext;
++import com.jayway.jsonpath.PathNotFoundException;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * Value inside a Gson tree, navigated with Jayway JsonPath.<br/>
++ * This is the reference engine. It's used when the native one isn't available.
++ */
++public final class JaywayNode implements JsonNode {
++    private final ParseContext mParser;
++    private final JsonElement mElement;
++    private DocumentContext mContext;
++
++    public JaywayNode(ParseContext parser, JsonElement element) {
++        mParser = parser;
++        mElement = element != null ? element : JsonNull.INSTANCE;
++    }
++
++    /**
++     * @param context already parsed document
++     */
++    public JaywayNode(ParseContext parser, DocumentContext context) {
++        this(parser, (JsonElement) context.json());
++        mContext = context;
++    }
++
++    @Override
++    public JsonNode read(JsonPathExpr path) {
++        if (mContext == null) {
++            // The old mapper did toString() + parse() on every value before reading from it.
++            // That's megabytes of garbage for nothing. Except one case: see below.
++            mContext = hasUnwrappedNumber(mElement) ? mParser.parse(mElement.toString()) : mParser.parse((Object) mElement);
++        }
++
++        Object result;
++
++        try {
++            result = mContext.read(path.jayway());
++        } catch (PathNotFoundException e) {
++            return null;
++        }
++
++        return new JaywayNode(mParser, (JsonElement) result);
++    }
++
++    @Override
++    public boolean isArray() {
++        return mElement instanceof JsonArray;
++    }
++
++    @Override
++    public boolean isObject() {
++        return mElement instanceof JsonObject;
++    }
++
++    @Override
++    public boolean isPrimitive() {
++        return mElement instanceof JsonPrimitive;
++    }
++
++    @Override
++    public List<JsonNode> elements() {
++        JsonArray array = (JsonArray) mElement;
++        List<JsonNode> result = new ArrayList<>(array.size());
++
++        for (JsonElement item : array) {
++            result.add(new JaywayNode(mParser, item));
++        }
++
++        return result;
++    }
++
++    @Override
++    public JsonPrimitive asPrimitive() {
++        return (JsonPrimitive) mElement;
++    }
++
++    /**
++     * Numbers that Jayway returns directly (not inside of an object or a nested array) aren't the ones
++     * Gson has parsed: GsonJsonProvider turns them into Integer, Long, Double or BigDecimal.
++     * Text round trip isn't a no-op for them (e.g. 1.5e3 -> Integer 1500 -> "1500").
++     * Such a number can only be the value itself or a direct item of a returned array.
++     */
++    private static boolean hasUnwrappedNumber(JsonElement element) {
++        if (element instanceof JsonArray) {
++            for (JsonElement item : (JsonArray) element) {
++                if (isUnwrappedNumber(item)) {
++                    return true;
++                }
++            }
++
++            return false;
++        }
++
++        return isUnwrappedNumber(element);
++    }
++
++    private static boolean isUnwrappedNumber(JsonElement element) {
++        if (element instanceof JsonPrimitive) {
++            JsonPrimitive primitive = (JsonPrimitive) element;
++            return primitive.isNumber() && !(primitive.getAsNumber() instanceof LazilyParsedNumber);
++        }
++
++        return false;
++    }
++
++    /**
++     * Diagnostics
++     */
++    JsonElement rawElement() {
++        return mElement;
++    }
++
++    /**
++     * NOTE: never dumps the content. It could be megabytes.
++     */
++    @Override
++    public String toString() {
++        if (mElement instanceof JsonPrimitive) {
++            return mElement.toString();
++        } else if (mElement instanceof JsonArray) {
++            return "JsonArray(size=" + ((JsonArray) mElement).size() + ")";
++        } else if (mElement instanceof JsonObject) {
++            return "JsonObject(size=" + ((JsonObject) mElement).size() + ")";
++        }
++
++        return "null";
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonNode.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonNode.java
+new file mode 100644
+index 00000000..e5773668
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonNode.java
+@@ -0,0 +1,39 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++import com.google.gson.JsonPrimitive;
++
++import java.util.List;
++
++/**
++ * Json value as the mapper sees it. Hides where the document actually lives:
++ * in a Gson tree ({@link JaywayNode}) or outside of the Java heap ({@link NativeDocument}).
++ */
++public interface JsonNode {
++    /**
++     * Same contract as Jayway's <code>DocumentContext.read(path)</code> (GsonJsonProvider, default options).
++     *
++     * @return null if Jayway would throw PathNotFoundException. Note, json null is a regular (non-null) node.
++     */
++    JsonNode read(JsonPathExpr path);
++
++    boolean isArray();
++
++    boolean isObject();
++
++    /**
++     * String, number or boolean
++     */
++    boolean isPrimitive();
++
++    /**
++     * Call only if {@link #isArray()}
++     */
++    List<JsonNode> elements();
++
++    /**
++     * Call only if {@link #isPrimitive()}
++     *
++     * @return the same value (including the number representation) that Jayway returns
++     */
++    JsonPrimitive asPrimitive();
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonPathExpr.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonPathExpr.java
+new file mode 100644
+index 00000000..85d6df75
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/JsonPathExpr.java
+@@ -0,0 +1,91 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++import com.jayway.jsonpath.JsonPath;
++
++/**
++ * Path expression that is compiled once per engine.<br/>
++ * The same few hundred expressions are evaluated many thousands of times per response.
++ */
++public final class JsonPathExpr {
++    private static final long NOT_COMPILED = 0;
++    private static final long UNSUPPORTED = -1;
++    private final String mSource;
++    private final boolean mTemporary;
++    private volatile long mNativeHandle = NOT_COMPILED;
++    private volatile JsonPath mJayway;
++
++    /**
++     * Expression that lives as long as the app does (e.g. comes from an annotation)
++     */
++    public JsonPathExpr(String source) {
++        this(source, false);
++    }
++
++    private JsonPathExpr(String source, boolean temporary) {
++        mSource = source;
++        mTemporary = temporary;
++    }
++
++    /**
++     * Expression that is built at runtime. The native side compiles it on each use and doesn't keep it.
++     */
++    public static JsonPathExpr temporary(String source) {
++        return new JsonPathExpr(source, true);
++    }
++
++    boolean isTemporary() {
++        return mTemporary;
++    }
++
++    public static JsonPathExpr[] from(String[] sources) {
++        if (sources == null) {
++            return null;
++        }
++
++        JsonPathExpr[] result = new JsonPathExpr[sources.length];
++
++        for (int i = 0; i < sources.length; i++) {
++            result[i] = new JsonPathExpr(sources[i]);
++        }
++
++        return result;
++    }
++
++    /**
++     * @return handle (&gt; 0), or -1 if the native engine doesn't support this expression
++     */
++    long nativeHandle() {
++        long handle = mNativeHandle;
++
++        if (handle == NOT_COMPILED) {
++            handle = mSource != null ? NativeJson.nCompilePath(mSource) : UNSUPPORTED;
++
++            if (handle <= 0) {
++                handle = UNSUPPORTED;
++            }
++
++            mNativeHandle = handle;
++        }
++
++        return handle;
++    }
++
++    /**
++     * NOTE: a broken expression throws on each call. Same as <code>DocumentContext.read(String)</code>
++     */
++    JsonPath jayway() {
++        JsonPath result = mJayway;
++
++        if (result == null) {
++            result = JsonPath.compile(mSource);
++            mJayway = result;
++        }
++
++        return result;
++    }
++
++    @Override
++    public String toString() {
++        return mSource;
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeDocument.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeDocument.java
+new file mode 100644
+index 00000000..dcc4288a
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeDocument.java
+@@ -0,0 +1,189 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++import java.io.ByteArrayInputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.SequenceInputStream;
++import java.util.concurrent.atomic.AtomicLong;
++
++/**
++ * Document that lives outside of the Java heap (see <code>rust/kdtube-core</code>).<br/>
++ * <br/>
++ * The response is streamed to the native side in small chunks, so the Java heap never holds
++ * the whole content, its String form or a tree of it. Measured on the biggest recorded response
++ * (subscriptions, 1.5 MB): the old mapper allocated 100 MB on the Java heap, this one allocates
++ * 6 MB (the model itself, mostly) plus 2.4 MB of native memory that is freed on close.<br/>
++ * <br/>
++ * Must be closed. Nodes of a closed document can't be used.
++ */
++public final class NativeDocument {
++    private static final int BUFFER_SIZE = 16 * 1024;
++    private static final AtomicLong sLoaded = new AtomicLong();
++    private static final AtomicLong sReplayed = new AtomicLong();
++    private long mHandle;
++    private boolean mReady;
++    // What isn't on the native side (if something went wrong while reading)
++    private IOException mReadError;
++    private byte[] mPending;
++    private int mPendingLen;
++    private InputStream mRest;
++
++    private NativeDocument(long handle) {
++        mHandle = handle;
++    }
++
++    /**
++     * Moves the content of the stream to the native side and builds an index over it.
++     *
++     * @return null if the native engine isn't available. Nothing is consumed from the stream in this case.
++     */
++    public static NativeDocument load(InputStream is, boolean skipFirstLine) {
++        if (is == null || !NativeJson.isAvailable()) {
++            return null;
++        }
++
++        long handle = NativeJson.nCreate(0);
++
++        if (handle == 0) {
++            return null;
++        }
++
++        NativeDocument doc = new NativeDocument(handle);
++
++        try {
++            doc.fill(is, skipFirstLine);
++        } catch (RuntimeException | Error e) {
++            // Unusual stream. Nobody will close the document if it isn't returned.
++            doc.close();
++            throw e;
++        }
++
++        sLoaded.incrementAndGet();
++
++        return doc;
++    }
++
++    /**
++     * Diagnostics: number of documents that went to the native side since the app start
++     */
++    public static long getLoadedCount() {
++        return sLoaded.get();
++    }
++
++    /**
++     * Diagnostics: how many of them had to be processed by the Java engine after all
++     */
++    public static long getReplayedCount() {
++        return sReplayed.get();
++    }
++
++    private void fill(InputStream is, boolean skipFirstLine) {
++        byte[] buffer = new byte[BUFFER_SIZE];
++
++        try {
++            int len;
++            while ((len = is.read(buffer)) != -1) {
++                if (len > 0 && NativeJson.nAppend(mHandle, buffer, len) != 0) {
++                    // Too big? Keep the part that isn't stored.
++                    mPending = buffer;
++                    mPendingLen = len;
++                    mRest = is;
++                    return;
++                }
++            }
++        } catch (IOException e) {
++            // Connection problems etc. The Java engine decides what to do with it (see replay).
++            mReadError = e;
++            return;
++        }
++
++        mReady = NativeJson.nFinish(mHandle, skipFirstLine) == 0;
++    }
++
++    /**
++     * @return false if the content should be processed by the Java engine (not a strict json, read error etc)
++     */
++    public boolean isReady() {
++        return mReady;
++    }
++
++    public JsonNode root() {
++        long root = NativeJson.nRoot(handle());
++
++        if (root < 0) {
++            throw new NativeUnsupportedException("No root");
++        }
++
++        return new NativeNode(this, root);
++    }
++
++    /**
++     * @return the original stream content (including the part that wasn't read and the read error, if any)
++     */
++    public InputStream replay() {
++        byte[] bytes = NativeJson.nBytes(handle());
++
++        if (bytes == null) {
++            throw new IllegalStateException("Can't get the content back from the native side");
++        }
++
++        sReplayed.incrementAndGet();
++
++        InputStream result = new ByteArrayInputStream(bytes);
++
++        if (mPending != null) {
++            result = new SequenceInputStream(result,
++                    new SequenceInputStream(new ByteArrayInputStream(mPending, 0, mPendingLen), mRest));
++        } else if (mReadError != null) {
++            result = new SequenceInputStream(result, new FailedInputStream(mReadError));
++        }
++
++        return result;
++    }
++
++    public void close() {
++        long handle = mHandle;
++        mHandle = 0;
++        mReady = false;
++
++        if (handle != 0) {
++            NativeJson.nFree(handle);
++        }
++    }
++
++    /**
++     * Diagnostics: [input bytes, index entries, native heap bytes]
++     */
++    public long[] stats() {
++        return NativeJson.nStats(handle());
++    }
++
++    long handle() {
++        if (mHandle == 0) {
++            throw new IllegalStateException("The document is closed");
++        }
++
++        return mHandle;
++    }
++
++    /**
++     * Reproduces the error that happened while reading the original stream
++     */
++    private static final class FailedInputStream extends InputStream {
++        private final IOException mError;
++
++        FailedInputStream(IOException error) {
++            mError = error;
++        }
++
++        @Override
++        public int read() throws IOException {
++            throw mError;
++        }
++
++        @Override
++        public int read(byte[] b, int off, int len) throws IOException {
++            throw mError;
++        }
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeJson.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeJson.java
+new file mode 100644
+index 00000000..e05078db
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeJson.java
+@@ -0,0 +1,172 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++/**
++ * JNI bindings to the Rust core (<code>rust/kdtube-core</code>, <code>libkdtube_core.so</code>).<br/>
++ * <br/>
++ * The native side keeps the response bytes plus a compact index outside of the Java heap and
++ * evaluates JsonPath expressions on it. Values are addressed by <code>long</code> handles:
++ * <pre>
++ * bit  0..31  node reference
++ * bit  32     COPY - the value came out of a path evaluation
++ * bit  33     UNWRAPPED - number representation, see {@link #isUnwrapped(long)}
++ * bit  34..36 kind - one of the KIND_* constants
++ * bit  37     REPARSED - number representation, see {@link #isReparsed(long)}
++ * </pre>
++ * Negative values are status codes ({@link #NOT_FOUND}, {@link #UNSUPPORTED}).<br/>
++ * <br/>
++ * Nothing in here throws. Callers must treat {@link #UNSUPPORTED} (or a <code>null</code> result)
++ * as "replay this request on the Java engine".
++ */
++public final class NativeJson {
++    private static final String LIB_NAME = "kdtube_core";
++    /** Must match <code>ABI_VERSION</code> in rust/kdtube-core/src/lib.rs */
++    private static final int ABI_VERSION = 2;
++
++    /** Same meaning as Jayway's PathNotFoundException */
++    public static final long NOT_FOUND = -1;
++    /** The native engine can't answer. Use the Java engine instead. */
++    public static final long UNSUPPORTED = -2;
++
++    public static final int KIND_NULL = 0;
++    public static final int KIND_FALSE = 1;
++    public static final int KIND_TRUE = 2;
++    public static final int KIND_NUMBER = 3;
++    public static final int KIND_STRING = 4;
++    public static final int KIND_ARRAY = 5;
++    public static final int KIND_OBJECT = 6;
++
++    private static final long UNWRAPPED_BIT = 1L << 33;
++    private static final int KIND_SHIFT = 34;
++    private static final long REPARSED_BIT = 1L << 37;
++
++    private static final int STATE_UNKNOWN = 0;
++    private static final int STATE_AVAILABLE = 1;
++    private static final int STATE_UNAVAILABLE = 2;
++    private static volatile int sState = STATE_UNKNOWN;
++    private static volatile boolean sEnabled = true;
++
++    private NativeJson() {
++    }
++
++    /**
++     * @return true if the library is present, loadable on this device and speaks the expected ABI
++     */
++    public static boolean isAvailable() {
++        if (!sEnabled) {
++            return false;
++        }
++
++        int state = sState;
++
++        if (state == STATE_UNKNOWN) {
++            state = load();
++        }
++
++        return state == STATE_AVAILABLE;
++    }
++
++    /**
++     * Troubleshooting switch. When disabled everything goes through the Java engine.
++     */
++    public static void setEnabled(boolean enabled) {
++        sEnabled = enabled;
++    }
++
++    private static synchronized int load() {
++        if (sState != STATE_UNKNOWN) {
++            return sState;
++        }
++
++        int state = STATE_UNAVAILABLE;
++
++        try {
++            System.loadLibrary(LIB_NAME);
++            if (nAbiVersion() == ABI_VERSION) {
++                state = STATE_AVAILABLE;
++            }
++        } catch (Throwable e) {
++            // UnsatisfiedLinkError: lib isn't packaged for this abi, or the device is too old for it.
++            // SecurityException etc. Either way: the Java engine does the job.
++        }
++
++        sState = state;
++
++        return state;
++    }
++
++    public static int kind(long node) {
++        return (int) ((node >> KIND_SHIFT) & 7);
++    }
++
++    /**
++     * The number was read through an object property. Jayway's GsonJsonProvider "unwraps" such numbers
++     * (Integer, Long, Double, BigDecimal) and leaves array elements as is (LazilyParsedNumber).
++     */
++    public static boolean isUnwrapped(long node) {
++        return (node & UNWRAPPED_BIT) != 0;
++    }
++
++    /**
++     * Unwrapped number that has been taken out of a context. The old mapper used to serialize
++     * and to parse again every value before reading from it. So such number is lazily parsed again,
++     * but from the text of the unwrapped one (e.g. 1.5e3 -> Integer 1500 -> "1500").
++     */
++    public static boolean isReparsed(long node) {
++        return (node & REPARSED_BIT) != 0;
++    }
++
++    /**
++     * Not about json, but lives in the same library: where the function bodies of a script are.<br/>
++     * Used to make the JS challenge solvers parse the player lazily (see assets/nsigsolver/lazy.ast.js).
++     *
++     * @return "start,end,start,end..." (positions inside of the string, in source order),
++     * or null if the library isn't available or the source can't be parsed
++     */
++    public static String jsFunctionBodySpans(String source) {
++        if (source == null || !isAvailable()) {
++            return null;
++        }
++
++        return nJsFunctionSpans(source);
++    }
++
++    static native String nJsFunctionSpans(String source);
++
++    static native int nAbiVersion();
++
++    /** @return document handle, or 0 */
++    static native long nCreate(int capacityHint);
++
++    /** @return 0 on success */
++    static native int nAppend(long doc, byte[] buf, int len);
++
++    /** @return 0 on success. Anything else: the content isn't strict json (the Java engine may still accept it). */
++    static native int nFinish(long doc, boolean skipFirstLine);
++
++    static native void nFree(long doc);
++
++    static native long nRoot(long doc);
++
++    /** @return path handle (&gt; 0), or 0 if the expression isn't supported natively */
++    static native long nCompilePath(String path);
++
++    static native long nEval(long doc, long ctx, long path);
++
++    /** Same as {@link #nEval} but for an expression that shouldn't be kept on the native side */
++    static native long nEvalText(long doc, long ctx, String path);
++
++    /** @return string value or number text. Null if the node is of other kind or can't be represented. */
++    static native String nText(long doc, long node);
++
++    /** @return array elements, or null if the node isn't an array */
++    static native long[] nElements(long doc, long node);
++
++    /** Diagnostics: [key0, value0, key1, value1...], or null if the node isn't an object */
++    static native long[] nMembers(long doc, long node);
++
++    /** @return the bytes as they were appended */
++    static native byte[] nBytes(long doc);
++
++    /** Diagnostics: [input bytes, index entries, native heap bytes] */
++    static native long[] nStats(long doc);
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeNode.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeNode.java
+new file mode 100644
+index 00000000..6ba9a25b
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeNode.java
+@@ -0,0 +1,175 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++import com.google.gson.JsonPrimitive;
++import com.google.gson.internal.LazilyParsedNumber;
++import com.jayway.jsonpath.spi.json.GsonJsonProvider;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * Value inside a {@link NativeDocument}. Just a handle: nothing is copied to the Java heap
++ * until a primitive is requested.
++ */
++final class NativeNode implements JsonNode {
++    private static final GsonJsonProvider sProvider = new GsonJsonProvider();
++    private final NativeDocument mDocument;
++    private final long mNode;
++
++    NativeNode(NativeDocument document, long node) {
++        mDocument = document;
++        mNode = node;
++    }
++
++    @Override
++    public JsonNode read(JsonPathExpr path) {
++        long result;
++
++        if (path.isTemporary()) {
++            result = NativeJson.nEvalText(mDocument.handle(), mNode, path.toString());
++        } else {
++            long pathHandle = path.nativeHandle();
++
++            if (pathHandle <= 0) {
++                throw new NativeUnsupportedException("Unsupported path: " + path);
++            }
++
++            result = NativeJson.nEval(mDocument.handle(), mNode, pathHandle);
++        }
++
++        if (result == NativeJson.NOT_FOUND) {
++            return null;
++        }
++
++        if (result < 0) {
++            throw new NativeUnsupportedException("Can't evaluate: " + path);
++        }
++
++        return new NativeNode(mDocument, result);
++    }
++
++    @Override
++    public boolean isArray() {
++        return NativeJson.kind(mNode) == NativeJson.KIND_ARRAY;
++    }
++
++    @Override
++    public boolean isObject() {
++        return NativeJson.kind(mNode) == NativeJson.KIND_OBJECT;
++    }
++
++    @Override
++    public boolean isPrimitive() {
++        int kind = NativeJson.kind(mNode);
++        return kind == NativeJson.KIND_STRING || kind == NativeJson.KIND_NUMBER ||
++                kind == NativeJson.KIND_TRUE || kind == NativeJson.KIND_FALSE;
++    }
++
++    @Override
++    public List<JsonNode> elements() {
++        long[] items = NativeJson.nElements(mDocument.handle(), mNode);
++
++        if (items == null) {
++            throw new NativeUnsupportedException("Can't get the elements");
++        }
++
++        List<JsonNode> result = new ArrayList<>(items.length);
++
++        for (long item : items) {
++            result.add(new NativeNode(mDocument, item));
++        }
++
++        return result;
++    }
++
++    @Override
++    public JsonPrimitive asPrimitive() {
++        switch (NativeJson.kind(mNode)) {
++            case NativeJson.KIND_STRING:
++                return new JsonPrimitive(text());
++            case NativeJson.KIND_TRUE:
++                return new JsonPrimitive(Boolean.TRUE);
++            case NativeJson.KIND_FALSE:
++                return new JsonPrimitive(Boolean.FALSE);
++            case NativeJson.KIND_NUMBER:
++                // The same object Gson creates while parsing
++                JsonPrimitive number = new JsonPrimitive(new LazilyParsedNumber(text()));
++                boolean reparsed = NativeJson.isReparsed(mNode);
++
++                if (reparsed || NativeJson.isUnwrapped(mNode)) {
++                    // Jayway: GsonJsonProvider.getMapValue() unwraps the number (Integer, Long, Double...)
++                    // and the result array wraps it again. Array items are left as is.
++                    Object unwrapped = sProvider.unwrap(number);
++
++                    if (unwrapped instanceof Number) {
++                        number = new JsonPrimitive((Number) unwrapped);
++                    }
++
++                    if (reparsed) {
++                        // ...and then the old mapper did toString() + parse() on the array that holds it
++                        number = new JsonPrimitive(new LazilyParsedNumber(number.toString()));
++                    }
++                }
++
++                return number;
++        }
++
++        throw new IllegalStateException("Not a primitive: " + this);
++    }
++
++    private String text() {
++        String text = NativeJson.nText(mDocument.handle(), mNode);
++
++        if (text == null) {
++            // E.g. lone surrogate. Java string can hold it but the native one can't.
++            throw new NativeUnsupportedException("Can't get the text");
++        }
++
++        return text;
++    }
++
++    @Override
++    public String toString() {
++        switch (NativeJson.kind(mNode)) {
++            case NativeJson.KIND_ARRAY:
++                return "JsonArray";
++            case NativeJson.KIND_OBJECT:
++                return "JsonObject";
++            case NativeJson.KIND_NULL:
++                return "null";
++            case NativeJson.KIND_TRUE:
++                return "true";
++            case NativeJson.KIND_FALSE:
++                return "false";
++            default:
++                String text = NativeJson.nText(mDocument.handle(), mNode);
++                return text != null ? text : "?";
++        }
++    }
++
++    /**
++     * Diagnostics
++     */
++    long handle() {
++        return mNode;
++    }
++
++    /**
++     * Diagnostics: [key0, value0, key1, value1...]
++     */
++    List<NativeNode> members() {
++        long[] items = NativeJson.nMembers(mDocument.handle(), mNode);
++
++        if (items == null) {
++            throw new NativeUnsupportedException("Can't get the members");
++        }
++
++        List<NativeNode> result = new ArrayList<>(items.length);
++
++        for (long item : items) {
++            result.add(new NativeNode(mDocument, item));
++        }
++
++        return result;
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeUnsupportedException.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeUnsupportedException.java
+new file mode 100644
+index 00000000..459d025a
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/engine/NativeUnsupportedException.java
+@@ -0,0 +1,19 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.engine;
++
++/**
++ * The native engine can't process this document or expression.<br/>
++ * Not an error: the request should be replayed on the Java engine.
++ */
++public final class NativeUnsupportedException extends RuntimeException {
++    public NativeUnsupportedException(String message) {
++        super(message);
++    }
++
++    /**
++     * Used for flow control only. No need for the stack trace.
++     */
++    @Override
++    public synchronized Throwable fillInStackTrace() {
++        return this;
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/ClassSchema.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/ClassSchema.java
+new file mode 100644
+index 00000000..ef356157
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/ClassSchema.java
+@@ -0,0 +1,112 @@
++package com.liskovsoft.googlecommon.common.converters.jsonpath.typeadapter;
++
++import com.liskovsoft.googlecommon.common.converters.jsonpath.JsonPath;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.JsonPathObj;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.JsonPathExpr;
++import com.liskovsoft.googlecommon.common.helpers.ReflectionHelper;
++
++import java.lang.reflect.Constructor;
++import java.lang.reflect.Field;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Everything the mapper needs to know about a model class. Collected once.<br/>
++ * Before, the fields and their annotations were looked up again for every single object
++ * (thousands of times per response).
++ */
++final class ClassSchema {
++    private static final ConcurrentHashMap<Class<?>, ClassSchema> sCache = new ConcurrentHashMap<>();
++    private final Class<?> mType;
++    private final Constructor<?> mConstructor;
++    /**
++     * Annotation on the class itself. Null if there's none.
++     */
++    final JsonPathExpr[] classPaths;
++    /**
++     * Annotated fields only. Same order as {@link ReflectionHelper#getAllFields(Class)}
++     */
++    final FieldSchema[] fields;
++
++    static final class FieldSchema {
++        final Field field;
++        final JsonPathExpr[] paths;
++        final boolean isJsonPathObj;
++        private Class<?> mGenericParamType;
++        private boolean mGenericParamResolved;
++
++        FieldSchema(Field field, JsonPathExpr[] paths) {
++            this.field = field;
++            this.paths = paths;
++            this.isJsonPathObj = JsonPathObj.class.isAssignableFrom(field.getType());
++        }
++
++        /**
++         * Item type of the list
++         */
++        Class<?> getGenericParamType() {
++            if (!mGenericParamResolved) {
++                // NOTE: may throw (e.g. list of lists). The result isn't remembered in this case.
++                mGenericParamType = ReflectionHelper.getGenericParamType(field);
++                mGenericParamResolved = true;
++            }
++
++            return mGenericParamType;
++        }
++    }
++
++    static ClassSchema of(Class<?> type) {
++        ClassSchema schema = sCache.get(type);
++
++        if (schema == null) {
++            schema = new ClassSchema(type);
++            ClassSchema existing = sCache.putIfAbsent(type, schema);
++
++            if (existing != null) {
++                schema = existing;
++            }
++        }
++
++        return schema;
++    }
++
++    private ClassSchema(Class<?> type) {
++        mType = type;
++
++        Constructor<?> constructor = null;
++
++        try {
++            constructor = type.getConstructor();
++        } catch (Exception e) {
++            // No public constructor. Will be reported on instantiation.
++        }
++
++        mConstructor = constructor;
++
++        JsonPath classAnnotation = type.getAnnotation(JsonPath.class);
++        classPaths = classAnnotation != null ? JsonPathExpr.from(classAnnotation.value()) : null;
++
++        List<FieldSchema> result = new ArrayList<>();
++
++        for (Field field : ReflectionHelper.getAllFields(type)) {
++            JsonPath annotation = field.getAnnotation(JsonPath.class);
++
++            if (annotation == null) {
++                continue;
++            }
++
++            field.setAccessible(true);
++            result.add(new FieldSchema(field, JsonPathExpr.from(annotation.value())));
++        }
++
++        fields = result.toArray(new FieldSchema[0]);
++    }
++
++    Object newInstance() throws Exception {
++        // NOTE: getConstructor throws the original exception if there's no suitable constructor
++        Constructor<?> constructor = mConstructor != null ? mConstructor : mType.getConstructor();
++
++        return constructor.newInstance();
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathSkipTypeAdapter.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathSkipTypeAdapter.java
+index f2f41892..734f5669 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathSkipTypeAdapter.java
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathSkipTypeAdapter.java
+@@ -1,14 +1,7 @@
+ package com.liskovsoft.googlecommon.common.converters.jsonpath.typeadapter;
+ 
+ import com.jayway.jsonpath.ParseContext;
+-import com.liskovsoft.googlecommon.common.converters.jsonpath.typeadapter.JsonPathTypeAdapter;
+ 
+-import org.apache.commons.io.input.ReaderInputStream;
+-
+-import java.io.BufferedReader;
+-import java.io.IOException;
+-import java.io.InputStream;
+-import java.io.InputStreamReader;
+ import java.lang.reflect.Type;
+ 
+ public class JsonPathSkipTypeAdapter<T> extends JsonPathTypeAdapter<T> {
+@@ -21,19 +14,7 @@ public class JsonPathSkipTypeAdapter<T> extends JsonPathTypeAdapter<T> {
+     }
+ 
+     @Override
+-    protected InputStream process(InputStream is) {
+-        return skipFirstLine(is);
+-    }
+-
+-    private InputStream skipFirstLine(InputStream is) {
+-        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+-
+-        try {
+-            reader.readLine(); // this will read the first line
+-        } catch (IOException e) {
+-            e.printStackTrace();
+-        }
+-
+-        return new ReaderInputStream(reader, "UTF-8");
++    protected boolean skipFirstLine() {
++        return true;
+     }
+ }
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathTypeAdapter.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathTypeAdapter.java
+index cb75524d..a1691779 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathTypeAdapter.java
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/converters/jsonpath/typeadapter/JsonPathTypeAdapter.java
+@@ -1,20 +1,24 @@
+ package com.liskovsoft.googlecommon.common.converters.jsonpath.typeadapter;
+ 
+-import com.google.gson.JsonArray;
+-import com.google.gson.JsonObject;
+ import com.google.gson.JsonPrimitive;
+-import com.jayway.jsonpath.DocumentContext;
+ import com.jayway.jsonpath.ParseContext;
+-import com.jayway.jsonpath.PathNotFoundException;
+-import com.liskovsoft.googlecommon.common.converters.jsonpath.JsonPathObj;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.JaywayNode;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.JsonNode;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.JsonPathExpr;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.NativeDocument;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.NativeJson;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.NativeUnsupportedException;
++import com.liskovsoft.googlecommon.common.converters.jsonpath.typeadapter.ClassSchema.FieldSchema;
+ import com.liskovsoft.sharedutils.helpers.Helpers;
+ import com.liskovsoft.sharedutils.mylogger.Log;
+-import com.liskovsoft.googlecommon.common.converters.jsonpath.JsonPath;
+-import com.liskovsoft.googlecommon.common.helpers.ReflectionHelper;
++import com.liskovsoft.youtubeapi.BuildConfig;
+ 
++import org.apache.commons.io.input.ReaderInputStream;
++
++import java.io.BufferedReader;
++import java.io.IOException;
+ import java.io.InputStream;
+-import java.lang.annotation.Annotation;
+-import java.lang.reflect.Constructor;
++import java.io.InputStreamReader;
+ import java.lang.reflect.Field;
+ import java.lang.reflect.Type;
+ import java.util.ArrayList;
+@@ -22,9 +26,20 @@ import java.util.List;
+ 
+ public class JsonPathTypeAdapter<T> {
+     private static final String TAG = JsonPathTypeAdapter.class.getSimpleName();
++    /**
++     * Most of the fields are optional: there are thousands of 'path not found' per response.
++     * Writing all of them to the system log isn't free. Do it for the debug builds only.
++     */
++    private static final boolean VERBOSE = BuildConfig.DEBUG;
+     private final ParseContext mParser;
+     private final Class<?> mType;
+ 
++    static {
++        if (VERBOSE) {
++            Log.d(TAG, "Native json engine: " + (NativeJson.isAvailable() ? "on" : "off"));
++        }
++    }
++
+     public JsonPathTypeAdapter(ParseContext parser, Class<?> type) {
+         mParser = parser;
+         mType = type;
+@@ -37,71 +52,143 @@ public class JsonPathTypeAdapter<T> {
+ 
+     @SuppressWarnings("unchecked")
+     public final T read(InputStream is) {
+-        is = process(is);
+-
+-        String jsonContent = null;
+-
+-        String[] jsonPath = getJsonPath(getGenericType());
++        // Preferred way: the content is moved to the native side (no huge strings and trees on the Java heap).
++        // Null if the native lib isn't available on this device. Nothing is consumed in this case.
++        NativeDocument doc = NativeDocument.load(is, skipFirstLine());
+ 
+-        if (jsonPath != null) { // annotation on the same collection class
+-            DocumentContext parser = mParser.parse(is);
+-            for (String path : jsonPath) {
+-                try {
+-                    jsonContent = parser.read(path).toString();
+-                    break;
+-                } catch (PathNotFoundException e) {
+-                    Log.e(TAG, e.getMessage());
++        if (doc != null) {
++            try {
++                if (doc.isReady()) {
++                    try {
++                        return (T) readType(getGenericType(), getContent(doc.root()));
++                    } catch (NativeUnsupportedException e) {
++                        // Rare content or expression. The Java engine handles everything (see below).
++                        if (VERBOSE) {
++                            Log.d(TAG, "Native json engine: " + e.getMessage() + ". Using the Java one for " + mType);
++                        }
++                    }
++                } else if (VERBOSE) {
++                    Log.d(TAG, "Native json engine: not a strict json or a read error. Using the Java one for " + mType);
+                 }
++
++                // The stream is consumed. Get the content back.
++                is = doc.replay();
++            } finally {
++                doc.close();
+             }
+-        } else { // annotation on field
+-            jsonContent = Helpers.toString(is);
+         }
+ 
+-        T result = (T) readType(getGenericType(), jsonContent);
+-
+-        //if (result == null) {
+-        //    // Dump root object
+-        //    ReflectionHelper.dumpDebugInfo(getGenericType(), jsonContent);
+-        //}
+-
+-        return result;
++        return (T) readJava(is);
+     }
+ 
+     /**
+-     * Enable additional processing like skipping first line etc
++     * Enable additional processing: skipping the first line (e.g. anti hijacking prefix)
+      */
+-    protected InputStream process(InputStream is) {
+-        return is;
++    protected boolean skipFirstLine() {
++        return false;
+     }
+ 
+     private Class<?> getGenericType() {
+         return mType;
+     }
+ 
++    /**
++     * The Java engine: Jayway JsonPath over Gson tree
++     */
++    private Object readJava(InputStream is) {
++        if (skipFirstLine()) {
++            is = skipFirstLine(is);
++        }
++
++        JsonPathExpr[] classPaths = ClassSchema.of(getGenericType()).classPaths;
++
++        if (classPaths != null) { // annotation on the same collection class
++            JsonNode root = new JaywayNode(mParser, mParser.parse(is));
++
++            return readType(getGenericType(), select(root, classPaths));
++        }
++
++        // annotation on field
++        return readType(getGenericType(), Helpers.toString(is));
++    }
++
++    private InputStream skipFirstLine(InputStream is) {
++        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
++
++        try {
++            reader.readLine(); // this will read the first line
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
++
++        return new ReaderInputStream(reader, "UTF-8");
++    }
++
++    /**
++     * @return part of the document that should be mapped
++     */
++    private JsonNode getContent(JsonNode root) {
++        JsonPathExpr[] classPaths = ClassSchema.of(getGenericType()).classPaths;
++
++        return classPaths != null ? select(root, classPaths) : root;
++    }
++
++    private JsonNode select(JsonNode root, JsonPathExpr[] paths) {
++        for (JsonPathExpr path : paths) {
++            JsonNode result = root.read(path);
++
++            if (result != null) {
++                return result;
++            }
++
++            Log.e(TAG, "No results for path: " + path);
++        }
++
++        return null;
++    }
++
++    private Object readType(Class<?> type, JsonNode node) {
++        if (type == null || node == null) {
++            return null;
++        }
++
++        return readType(type, node, null);
++    }
++
++    /**
++     * Root of the Java engine
++     */
+     private Object readType(Class<?> type, String jsonContent) {
+         if (type == null || jsonContent == null) {
+             return null;
+         }
+ 
++        return readType(type, null, jsonContent);
++    }
++
++    private Object readType(Class<?> type, JsonNode node, String jsonContent) {
+         Object obj = null;
+         boolean done = false;
+ 
+         try {
+-            Constructor<?> constructor = type.getConstructor();
+-            obj = constructor.newInstance();
++            ClassSchema schema = ClassSchema.of(type);
++            obj = schema.newInstance();
+ 
+-            DocumentContext parser = mParser.parse(jsonContent);
+-
+-            List<Field> fields = ReflectionHelper.getAllFields(type);
++            if (node == null) {
++                // NOTE: broken json is handled the same way as other mapping errors
++                node = new JaywayNode(mParser, mParser.parse(jsonContent));
++            }
+ 
+-            for (Field field : fields) {
+-                boolean result = processField(field, obj, type, parser);
++            for (FieldSchema field : schema.fields) {
++                boolean result = processField(field, obj, type, node);
+ 
+                 // At least one field is set
+                 if (result) {
+                     done = true;
+                 }
+             }
++        } catch (NativeUnsupportedException e) {
++            throw e; // The whole document will be processed by the Java engine
+         } catch (Exception e) {
+             e.printStackTrace();
+         }
+@@ -109,24 +196,21 @@ public class JsonPathTypeAdapter<T> {
+         return done ? obj : null;
+     }
+ 
+-    private boolean processField(Field field, Object obj, Class<?> type, DocumentContext parser) {
++    private boolean processField(FieldSchema schema, Object obj, Class<?> type, JsonNode node) {
+         //Log.d(TAG, "Processing on thread: %s", Thread.currentThread().getName());
+ 
+         boolean done = false;
+-        field.setAccessible(true);
+-        String[] jsonPath = getJsonPath(field);
++        Field field = schema.field;
++        JsonNode jsonVal = null;
+ 
+-        if (jsonPath == null) {
+-            return false;
+-        }
++        for (JsonPathExpr path : schema.paths) {
++            jsonVal = node.read(path);
+ 
+-        Object jsonVal = null;
+-
+-        for (String path : jsonPath) {
+-            try {
+-                jsonVal = parser.read(path);
++            if (jsonVal != null) {
+                 break;
+-            } catch (PathNotFoundException e) {
++            }
++
++            if (VERBOSE) {
+                 Log.d(TAG, type.getSimpleName() + ": Path not found: " + path);
+             }
+         }
+@@ -136,25 +220,25 @@ public class JsonPathTypeAdapter<T> {
+         }
+ 
+         try {
+-            if (JsonPathObj.class.isAssignableFrom(field.getType())) {
+-                Object val = readType(field.getType(), jsonVal.toString());
++            if (schema.isJsonPathObj) {
++                Object val = readType(field.getType(), jsonVal);
+                 field.set(obj, val);
+-            } else if (jsonVal instanceof JsonArray) {
++            } else if (jsonVal.isArray()) {
+                 List<Object> list = null;
+-                Class<?> myType = ReflectionHelper.getGenericParamType(field);
++                Class<?> myType = schema.getGenericParamType();
+ 
+                 if (myType == null) {
+                     Log.e(TAG, "Please, supply generic field for the list type: " + field);
+                     return false;
+                 }
+ 
+-                for (Object jsonObj : (JsonArray) jsonVal) {
++                for (JsonNode jsonObj : jsonVal.elements()) {
+                     Object item;
+ 
+-                    if (jsonObj instanceof JsonPrimitive) {
+-                        item = parsePrimitive((JsonPrimitive) jsonObj);
++                    if (jsonObj.isPrimitive()) {
++                        item = parsePrimitive(jsonObj.asPrimitive());
+                     } else {
+-                        item = readType(myType, jsonObj.toString());
++                        item = readType(myType, jsonObj);
+                     }
+ 
+                     if (item != null) {
+@@ -167,45 +251,27 @@ public class JsonPathTypeAdapter<T> {
+                 }
+ 
+                 field.set(obj, list);
+-            } else if (jsonVal instanceof JsonPrimitive) {
+-                Object val = parsePrimitive((JsonPrimitive) jsonVal);
++            } else if (jsonVal.isPrimitive()) {
++                Object val = parsePrimitive(jsonVal.asPrimitive());
+ 
+                 field.set(obj, val);
+-            } else if (jsonVal instanceof JsonObject) {
+-                Object val = readType(field.getType(), jsonVal.toString());
++            } else if (jsonVal.isObject()) {
++                Object val = readType(field.getType(), jsonVal);
+                 field.set(obj, val);
+             }
+ 
+             done = field.get(obj) != null; // field is set
+         } catch (IllegalArgumentException e) {
+-            Log.d(TAG, "%s: Incompatible json value found %s. Same path on different types?", field.getType().getSimpleName(), jsonVal);
++            if (VERBOSE) {
++                Log.d(TAG, "%s: Incompatible json value found %s. Same path on different types?", field.getType().getSimpleName(), jsonVal);
++            }
+         } catch (IllegalAccessException e) {
+-            Log.d(TAG, "%s: Illegal access with value %s.", field.getType().getSimpleName(), jsonVal);
+-        }
+-
+-        return done;
+-    }
+-
+-    private String[] getJsonPath(Class<?> type) {
+-        Annotation[] annotations = type.getAnnotations();
+-
+-        return getJsonPath(annotations);
+-    }
+-
+-    private String[] getJsonPath(Field field) {
+-        Annotation[] annotations = field.getAnnotations();
+-
+-        return getJsonPath(annotations);
+-    }
+-
+-    private String[] getJsonPath(Annotation[] annotations) {
+-        for (Annotation annotation : annotations) {
+-            if (annotation instanceof JsonPath) {
+-                return ((JsonPath) annotation).value();
++            if (VERBOSE) {
++                Log.d(TAG, "%s: Illegal access with value %s.", field.getType().getSimpleName(), jsonVal);
+             }
+         }
+ 
+-        return null;
++        return done;
+     }
+ 
+     private Object parsePrimitive(JsonPrimitive jsonVal) {
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8LowMemory.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8LowMemory.java
+new file mode 100644
+index 00000000..d5660385
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8LowMemory.java
+@@ -0,0 +1,52 @@
++package com.liskovsoft.googlecommon.common.js;
++
++import com.eclipsesource.v8.V8;
++import com.liskovsoft.sharedutils.helpers.DeviceHelpers;
++import com.liskovsoft.youtubeapi.app.AppService;
++
++/**
++ * Settings of the JS engine for the devices where memory is tight.
++ */
++public final class V8LowMemory {
++    // Devices that are sold as "3 GB" and less
++    private static final long LOW_RAM_BYTES = 3_500_000_000L;
++    private static boolean sApplied;
++
++    private V8LowMemory() {
++    }
++
++    public static boolean isLowRamDevice() {
++        long ram;
++
++        try {
++            ram = DeviceHelpers.getDeviceRam(AppService.instance().getContext());
++        } catch (Exception e) {
++            ram = -1;
++        }
++
++        // unknown amount: the safe way
++        return ram <= LOW_RAM_BYTES;
++    }
++
++    /**
++     * Should be called before an engine is created. The flags are process wide and the first engine fixes them.<br/>
++     * Makes the engine collect the garbage instead of growing: 40-50 MB less at the peak of the
++     * challenge solvers, a bit slower.<br/>
++     * NOTE: a limit of the heap size isn't used on purpose. Reaching it kills the whole app.
++     */
++    public static synchronized void apply() {
++        if (sApplied) {
++            return;
++        }
++
++        sApplied = true;
++
++        if (isLowRamDevice()) {
++            try {
++                V8.setFlags("--optimize-for-size");
++            } catch (Throwable e) {
++                // the engine works without it
++            }
++        }
++    }
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8Runtime.java b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8Runtime.java
+index cc26a6b4..d1c5aaa9 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8Runtime.java
++++ b/youtubeapi/src/main/java/com/liskovsoft/googlecommon/common/js/V8Runtime.java
+@@ -81,6 +81,7 @@ public final class V8Runtime {
+ 
+         try {
+             if (mRuntime == null) {
++                V8LowMemory.apply();
+                 mRuntime = V8.createV8Runtime();
+             }
+             mRuntime.getLocker().acquire(); // Possible 'Invalid V8 thread access' errors
+@@ -102,6 +103,7 @@ public final class V8Runtime {
+         String result;
+ 
+         try {
++            V8LowMemory.apply();
+             runtime = V8.createV8Runtime();
+             result = runtime.executeStringScript(source);
+         } finally {
+@@ -121,6 +123,7 @@ public final class V8Runtime {
+         String result = null;
+ 
+         try {
++            V8LowMemory.apply();
+             runtime = V8.createV8Runtime();
+             for (String source : sources) {
+                 try {
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/common/LazyAst.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/common/LazyAst.kt
+new file mode 100644
+index 00000000..65dbc9d8
+--- /dev/null
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/common/LazyAst.kt
+@@ -0,0 +1,50 @@
++package com.liskovsoft.youtubeapi.app.nsigsolver.common
++
++import com.liskovsoft.googlecommon.common.converters.jsonpath.engine.NativeJson
++import com.liskovsoft.googlecommon.common.js.V8LowMemory
++
++/**
++ * Low memory mode of the challenge solvers.
++ *
++ * The first solve for a new player parses the whole player (megabytes of js) inside the JS engine.
++ * That takes 130-190 MB of the engine's heap and running out of it kills the app, not just the solver.
++ * With the positions of the function bodies (found by the native lib) the solvers parse a body only
++ * when they read it: about 40 MB. It's slower, so that's for the devices that need it.
++ * More: assets/nsigsolver/lazy.ast.js
++ */
++internal object LazyAst {
++    /**
++     * Should be loaded after the parser/generator libs and before the solver
++     */
++    const val scriptFilename = "nsigsolver/lazy.ast.js"
++
++    /**
++     * Name of the global variable that should hold the result of [getSpans]
++     */
++    const val spansVar = "__playerSpans"
++
++    /**
++     * @return null: the regular way (enough memory, no native lib or the player can't be parsed by it)
++     */
++    fun getSpans(player: String): String? {
++        if (!isWanted()) {
++            return null
++        }
++
++        return try {
++            NativeJson.jsFunctionBodySpans(player)
++        } catch (e: Throwable) {
++            null
++        }
++    }
++
++    fun loadScript(): String {
++        return try {
++            loadScript(scriptFilename)
++        } catch (e: ScriptLoaderError) {
++            "" // the solvers work without it
++        }
++    }
++
++    private fun isWanted() = V8LowMemory.isLowRamDevice()
++}
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/TclChallengeProvider.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/TclChallengeProvider.kt
+index 0387aec4..6ddafedc 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/TclChallengeProvider.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/TclChallengeProvider.kt
+@@ -1,12 +1,14 @@
+ package com.liskovsoft.youtubeapi.app.nsigsolver.impl
+ 
+ import com.eclipsesource.v8.V8
++import com.liskovsoft.googlecommon.common.js.V8LowMemory
+ import com.google.gson.Gson
+ import com.google.gson.JsonSyntaxException
+ import com.google.gson.reflect.TypeToken
+ import com.liskovsoft.sharedutils.mylogger.Log
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.CacheService
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.CachedData
++import com.liskovsoft.youtubeapi.app.nsigsolver.common.LazyAst
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.loadScript
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.withLock
+ 
+@@ -27,12 +29,15 @@ internal object TclChallengeProvider {
+         "${libPrefix}polyfill.js",
+         "${libPrefix}meriyah-6.1.4.min.js",
+         "${libPrefix}astring-1.9.0.min.js",
++        // NOTE: wraps the libs above. The solver takes them when it is loaded.
++        LazyAst.scriptFilename,
+         "${libPrefix}tcl.solver.js"
+     )
+     private val solverOutputType = object : TypeToken<SolverOutput>() {}.type
+     private var v8Runtime: V8? = null
+     private val v8Lock = Any()
+     private const val cacheSection = "tcl-challenge-solver"
++    private const val playerVar = "__player"
+ 
+     private data class SolverOutput(val type: String?, val results: Map<String, String>?, val error: String?, val preprocessed_player: String?)
+ 
+@@ -58,37 +63,38 @@ internal object TclChallengeProvider {
+         val request = if (cachedPreprocessed != null) {
+             mapOf(
+                 "type" to "preprocessed",
+-                "preprocessed_player" to cachedPreprocessed,
+                 "challenges" to challengeByParam.values.toList()
+             )
+         } else {
+             mapOf(
+                 "type" to "player",
+-                "player" to playerCode,
+                 "challenges" to challengeByParam.values.toList(),
+                 "output_preprocessed" to true
+             )
+         }
+ 
+-        val stdin = "JSON.stringify(tclSolver(${Gson().toJson(request)}));"
++        // NOTE: the player (megabytes of js) is passed as a global variable and not embedded into the script.
++        // Escaping and concatenating it takes ~60 MB of java heap per call.
++        val playerKey = if (cachedPreprocessed != null) "preprocessed_player" else "player"
++        val stdin = "JSON.stringify(tclSolver(Object.assign(${Gson().toJson(request)}, {$playerKey: $playerVar})));"
+ 
+-        val stdout = try {
+-            synchronized(v8Lock) {
+-                initRuntime()
+-                val result = runV8(stdin)
+-                shutdownIfNeeded()
+-                result
++        // A new player has to be parsed. That is the expensive part: try the low memory way first.
++        val spans = if (cachedPreprocessed != null) null else LazyAst.getSpans(playerCode)
++        var output: SolverOutput? = null
++
++        if (spans != null) {
++            output = run(stdin, playerCode, spans)?.takeIf { result ->
++                result.type != "error" && challengeByParam.values.all { result.results?.get(it) != null }
++            }
++
++            if (output == null) {
++                // E.g. new version of the solver that changes the code of the functions in place
++                Log.w(tag, "Lazy parsing does not work for $playerUrl. Parsing the regular way...")
+             }
+-        } catch (e: Exception) {
+-            Log.e(tag, "TCL n-function solve failed: ${e.message}")
+-            return nParams.associateWith { null }
+         }
+ 
+-        val output: SolverOutput = try {
+-            Gson().fromJson(stdout, solverOutputType)
+-        } catch (e: JsonSyntaxException) {
+-            Log.e(tag, "Cannot parse TCL solver output: ${e.message}")
+-            return nParams.associateWith { null }
++        if (output == null) {
++            output = run(stdin, cachedPreprocessed ?: playerCode, null) ?: return nParams.associateWith { null }
+         }
+ 
+         if (output.type == "error") {
+@@ -107,9 +113,42 @@ internal object TclChallengeProvider {
+         return nParams.associateWith { param -> results[challengeByParam[param]] }
+     }
+ 
+-    private fun runV8(stdin: String): String {
++    /**
++     * @return null if the solver could not be run
++     */
++    private fun run(stdin: String, player: String, spans: String?): SolverOutput? {
++        val stdout = try {
++            synchronized(v8Lock) {
++                initRuntime()
++                try {
++                    runV8(stdin, player, spans)
++                } finally {
++                    // NOTE: also after a failure. The engine holds the player and tens of megabytes.
++                    shutdownIfNeeded()
++                }
++            }
++        } catch (e: Exception) {
++            Log.e(tag, "TCL n-function solve failed: ${e.message}")
++            return null
++        }
++
++        return try {
++            Gson().fromJson(stdout, solverOutputType)
++        } catch (e: JsonSyntaxException) {
++            Log.e(tag, "Cannot parse TCL solver output: ${e.message}")
++            null
++        }
++    }
++
++    private fun runV8(stdin: String, player: String? = null, spans: String? = null): String {
+         val runtime = v8Runtime ?: throw IllegalStateException("V8 runtime not initialized yet")
+         return runtime.withLock {
++            if (player != null) {
++                it.add(playerVar, player)
++            }
++            if (spans != null) {
++                it.add(LazyAst.spansVar, spans)
++            }
+             it.executeStringScript(stdin) ?: throw IllegalStateException("V8 runtime error: empty response")
+         }
+     }
+@@ -118,6 +157,7 @@ internal object TclChallengeProvider {
+         if (v8Runtime != null) {
+             return
+         }
++        V8LowMemory.apply()
+         v8Runtime = V8.createV8Runtime()
+         runV8(constructCommonStdin())
+     }
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/V8ChallengeProvider.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/V8ChallengeProvider.kt
+index d79cef8f..7c24c754 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/V8ChallengeProvider.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/impl/V8ChallengeProvider.kt
+@@ -1,7 +1,9 @@
+ package com.liskovsoft.youtubeapi.app.nsigsolver.impl
+ 
+ import com.eclipsesource.v8.V8
++import com.liskovsoft.googlecommon.common.js.V8LowMemory
+ import com.eclipsesource.v8.V8ScriptExecutionException
++import com.liskovsoft.youtubeapi.app.nsigsolver.common.LazyAst
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.loadScript
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.withLock
+ import com.liskovsoft.youtubeapi.app.nsigsolver.provider.JsChallengeProviderError
+@@ -33,22 +35,29 @@ internal object V8ChallengeProvider: JsRuntimeChalBaseJCP() {
+         return Script(scriptType, ScriptVariant.V8_NPM, ScriptSource.BUILTIN, scriptVersion, code)
+     }
+ 
+-    override fun runJsRuntime(stdin: String): String {
++    override fun runJsRuntime(stdin: String, player: String, spans: String?): String {
+         synchronized(v8Lock) {
+             initRuntime()
+ 
+-            val result = runV8(stdin)
+-
+-            shutdownIfNeeded()
+-
+-            return result
++            try {
++                return runV8(stdin, player, spans)
++            } finally {
++                // NOTE: also after a failure. The engine holds the player and tens of megabytes.
++                shutdownIfNeeded()
++            }
+         }
+     }
+ 
+-    private fun runV8(stdin: String): String {
++    private fun runV8(stdin: String, player: String? = null, spans: String? = null): String {
+         val runtime = v8Runtime ?: throw JsChallengeProviderError("V8 runtime not initialized yet")
+         try {
+             return runtime.withLock {
++                if (player != null) {
++                    it.add(playerVar, player)
++                }
++                if (spans != null) {
++                    it.add(LazyAst.spansVar, spans)
++                }
+                 it.executeStringScript(stdin) ?: throw JsChallengeProviderError("V8 runtime error: empty response")
+             }
+         } catch (e: V8ScriptExecutionException) {
+@@ -61,6 +70,7 @@ internal object V8ChallengeProvider: JsRuntimeChalBaseJCP() {
+     private fun initRuntime() {
+         if (v8Runtime != null)
+             return
++        V8LowMemory.apply()
+         v8Runtime = V8.createV8Runtime()
+         runV8(constructCommonStdin()) // ignore the result, just warm up
+     }
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/runtime/JsRuntimeChalBaseJCP.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/runtime/JsRuntimeChalBaseJCP.kt
+index 3111bbfd..525d09fc 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/runtime/JsRuntimeChalBaseJCP.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/nsigsolver/runtime/JsRuntimeChalBaseJCP.kt
+@@ -4,6 +4,7 @@ import com.google.gson.Gson
+ import com.google.gson.JsonSyntaxException
+ import com.liskovsoft.sharedutils.mylogger.Log
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.CachedData
++import com.liskovsoft.youtubeapi.app.nsigsolver.common.LazyAst
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.loadScript
+ import com.liskovsoft.youtubeapi.app.nsigsolver.provider.ChallengeOutput
+ import com.liskovsoft.youtubeapi.app.nsigsolver.provider.JsChallengeProvider
+@@ -34,7 +35,19 @@ internal abstract class JsRuntimeChalBaseJCP: JsChallengeProvider() {
+         ScriptType.CORE to "yt.solver.core.min.js"
+     )
+ 
+-    protected abstract fun runJsRuntime(stdin: String): String
++    /**
++     * Name of the global variable that holds the player code (see [runJsRuntime])
++     */
++    protected val playerVar = "__player"
++
++    /**
++     * @param player js code of the player (megabytes). It should be exposed to the script as
++     * the global variable [playerVar] and not embedded into the script itself:
++     * that takes ~60 MB of java heap per call just to escape and to concatenate it.
++     * @param spans positions of the function bodies of the player (see [LazyAst]). Should be exposed
++     * as the global variable [LazyAst.spansVar]. Null: the regular way.
++     */
++    protected abstract fun runJsRuntime(stdin: String, player: String, spans: String?): String
+ 
+     override fun realBulkSolve(requests: List<JsChallengeRequest>): Sequence<JsChallengeProviderResponse> = sequence {
+         val grouped: Map<String, List<JsChallengeRequest>> = requests.groupBy { it.input.playerUrl }
+@@ -50,18 +63,26 @@ internal abstract class JsRuntimeChalBaseJCP: JsChallengeProvider() {
+                 false
+             }
+ 
+-            val stdin = constructStdin(player, cached, groupedRequests)
+-            val stdout = runJsRuntime(stdin)
++            // A new player has to be parsed. That's the expensive part: try the low memory way first.
++            val spans = if (cached) null else LazyAst.getSpans(player)
++            var output: SolverOutput? = null
++
++            if (spans != null) {
++                output = try {
++                    runSolver(player, cached, groupedRequests, spans).takeIf { result -> result.responses.none { it.type == "error" } }
++                } catch (e: JsChallengeProviderError) {
++                    null
++                }
+ 
+-            val gson = Gson()
+-            val output: SolverOutput = try {
+-                gson.fromJson(stdout, solverOutputType)
+-            } catch (e: JsonSyntaxException) {
+-                throw JsChallengeProviderError("Cannot parse solver output", e)
++                if (output == null) {
++                    // E.g. new version of the solver that changes the code of the functions in place
++                    Log.w(tag, "Lazy parsing doesn't work for $playerUrl. Parsing the regular way...")
++                }
+             }
+ 
+-            if (output.type == "error")
+-                throw JsChallengeProviderError(output.error ?: "Unknown solver output error")
++            if (output == null) {
++                output = runSolver(player, cached, groupedRequests, null)
++            }
+ 
+             val preprocessed = output.preprocessed_player
+             if (preprocessed != null)
+@@ -80,7 +101,23 @@ internal abstract class JsRuntimeChalBaseJCP: JsChallengeProvider() {
+         }
+     }
+ 
+-    private fun constructStdin(player: String, preprocessed: Boolean, requests: List<JsChallengeRequest>): String {
++    private fun runSolver(player: String, preprocessed: Boolean, requests: List<JsChallengeRequest>, spans: String?): SolverOutput {
++        val stdout = runJsRuntime(constructStdin(preprocessed, requests), player, spans)
++
++        val gson = Gson()
++        val output: SolverOutput = try {
++            gson.fromJson(stdout, solverOutputType)
++        } catch (e: JsonSyntaxException) {
++            throw JsChallengeProviderError("Cannot parse solver output", e)
++        }
++
++        if (output.type == "error")
++            throw JsChallengeProviderError(output.error ?: "Unknown solver output error")
++
++        return output
++    }
++
++    private fun constructStdin(preprocessed: Boolean, requests: List<JsChallengeRequest>): String {
+         val jsonRequests = requests.map { request ->
+             mapOf(
+                 // TODO: i despise nsig name
+@@ -92,27 +129,29 @@ internal abstract class JsRuntimeChalBaseJCP: JsChallengeProvider() {
+         val data = if (preprocessed) {
+             mapOf(
+                 "type" to "preprocessed",
+-                "preprocessed_player" to player,
+                 "requests" to jsonRequests
+             )
+         } else {
+             mapOf(
+                 "type" to "player",
+-                "player" to player,
+                 "requests" to jsonRequests,
+                 "output_preprocessed" to true
+             )
+         }
+         val gson = Gson()
+         val jsonData = gson.toJson(data)
++        // NOTE: the player itself comes from the global variable (see runJsRuntime)
++        val playerKey = if (preprocessed) "preprocessed_player" else "player"
+         return """
+-        JSON.stringify(jsc($jsonData));
++        JSON.stringify(jsc(Object.assign($jsonData, {$playerKey: $playerVar})));
+         """
+     }
+ 
+     protected fun constructCommonStdin(): String {
++        // NOTE: the lazy parser wraps the libs. The solver takes them when it's loaded.
+         return """
+         ${libScript.code}
++        ${LazyAst.loadScript()}
+         ${coreScript.code}
+         "";
+         """
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/potokennp2/misc/V8Wrapper.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/potokennp2/misc/V8Wrapper.kt
+index 3df704ea..1b785bdd 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/potokennp2/misc/V8Wrapper.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/app/potokennp2/misc/V8Wrapper.kt
+@@ -2,6 +2,7 @@ package com.liskovsoft.youtubeapi.app.potokennp2.misc
+ 
+ import com.eclipsesource.v8.JavaVoidCallback
+ import com.eclipsesource.v8.V8
++import com.liskovsoft.googlecommon.common.js.V8LowMemory
+ import com.eclipsesource.v8.V8ScriptExecutionException
+ import com.liskovsoft.youtubeapi.app.nsigsolver.common.withLock
+ import com.liskovsoft.youtubeapi.app.potokennp2.core.V8WrapperException
+@@ -44,6 +45,7 @@ internal class V8Wrapper {
+     private fun initRuntime() {
+         if (v8Runtime != null)
+             return
++        V8LowMemory.apply()
+         v8Runtime = V8.createV8Runtime()
+     }
+ 

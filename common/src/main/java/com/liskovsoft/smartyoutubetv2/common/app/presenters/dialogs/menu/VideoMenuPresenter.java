@@ -28,6 +28,8 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.menu.provide
 import com.liskovsoft.smartyoutubetv2.common.app.views.ChannelUploadsView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.PlaybackView;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadItem;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadManager;
 import com.liskovsoft.smartyoutubetv2.common.misc.StreamReminderService;
 import com.liskovsoft.smartyoutubetv2.common.prefs.BlockedChannelData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
@@ -182,6 +184,7 @@ public class VideoMenuPresenter extends BaseMenuPresenter {
         }
 
         appendReturnToBackgroundVideoButton();
+        appendDeleteDownloadButton();
 
         for (Long menuItem : MainUIData.instance(getContext()).getMenuItemsOrdered()) {
             MenuAction menuAction = mMenuMapping.get(menuItem);
@@ -203,6 +206,7 @@ public class VideoMenuPresenter extends BaseMenuPresenter {
         }
 
         appendReturnToBackgroundVideoButton();
+        appendDeleteDownloadButton();
 
         for (Long menuItem : MainUIData.instance(getContext()).getMenuItemsOrdered()) {
             MenuAction menuAction = mMenuMapping.get(menuItem);
@@ -215,6 +219,33 @@ public class VideoMenuPresenter extends BaseMenuPresenter {
             String title = mVideo != null ? mVideo.getTitle() : null;
             mDialogPresenter.showDialog(title);
         }
+    }
+
+    /**
+     * The videos of the downloads section
+     */
+    private void appendDeleteDownloadButton() {
+        if (mVideo == null || mVideo.localUri == null || mVideo.videoId == null) {
+            return;
+        }
+
+        DownloadManager manager = DownloadManager.instance(getContext());
+        DownloadItem item = manager.findCompleted(mVideo.videoId);
+
+        if (item == null) {
+            return;
+        }
+
+        String quality = item.quality != null ? item.quality : getContext().getString(R.string.download_audio_only);
+
+        mDialogPresenter.appendSingleButton(
+                UiOptionItem.from(getContext().getString(R.string.download_delete_file, quality),
+                        optionItem -> {
+                            manager.delete(item);
+                            MessageHelpers.showMessage(getContext(), R.string.download_deleted);
+                            mDialogPresenter.closeDialog();
+                        }
+                ));
     }
 
     private void appendAddToWatchLaterButton() {

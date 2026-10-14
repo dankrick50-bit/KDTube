@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Where KDTube looks for its own updates (overrides the value of the common module, which is
+         the update channel of SmartTube). The file and the apk files next to it are made by
+         packaging/make-installers.sh: see installers/Updates/README.txt -->
+    <string-array name="update_urls">
+        <item>https://github.com/dankrick50-bit/KDTube/releases/download/latest/kdtube.json</item>
+    </string-array>
+</resources>

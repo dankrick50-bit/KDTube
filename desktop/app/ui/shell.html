@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' file: blob:; img-src 'self' file: data: blob:; style-src 'self'; script-src 'self'">
+  <title>KDTube</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body class="mode-tube">
+  <header id="bar">
+    <div class="brand">
+      <img src="../assets/icon.png" alt="">
+      <span>KD<b>Tube</b></span>
+    </div>
+    <nav class="tabs">
+      <button id="tab-tube" class="tab" title="YouTube">
+        <svg viewBox="0 0 24 24"><path d="M10 16.5l6-4.5-6-4.5v9zM21 3H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5v2h8v-2h5a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 14H3V5h18v12z"/></svg>
+        <span>YouTube</span>
+      </button>
+      <button id="tab-library" class="tab" title="Video and music files of this computer">
+        <svg viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2zm1 11.5v-6l5 3-5 3z"/></svg>
+        <span>Device media</span>
+      </button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="tools">
+      <button id="btn-back" class="tool" title="Back (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      <button id="btn-reload" class="tool" title="Reload (F5)">
+        <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      </button>
+      <button id="btn-cast" class="tool" title="Play on a TV, Fire TV or Google TV">
+        <svg viewBox="0 0 24 24"><path d="M21 3H3a2 2 0 0 0-2 2v3h2V5h18v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM1 18v3h3a3 3 0 0 0-3-3zm0-4v2a5 5 0 0 1 5 5h2a7 7 0 0 0-7-7zm0-4v2a9 9 0 0 1 9 9h2A11 11 0 0 0 1 10z"/></svg>
+      </button>
+      <button id="btn-panel" class="tool" title="Picture, sound and settings (F2)">
+        <svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+      </button>
+      <button id="btn-fullscreen" class="tool" title="Full screen (F11)">
+        <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+      </button>
+    </div>
+    <div class="window-buttons"></div>
+  </header>
+
+  <main id="stage">
+    <!-- Shown where YouTube would be when it can't be reached -->
+    <section id="offline" class="notice">
+      <svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46A5.5 5.5 0 0 1 17.5 11.5v.5H19a3 3 0 0 1 1.79 5.4l1.41 1.41A4.98 4.98 0 0 0 19.35 10.04zM3 5.27l2.75 2.74A5.99 5.99 0 0 0 6 20h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6a4 4 0 0 1 0-8h1.73z"/></svg>
+      <h2>YouTube can't be reached</h2>
+      <p>Check the connection of this computer. Your files in "Device media" play without it.</p>
+      <div class="row">
+        <button id="offline-retry" class="primary">Try again</button>
+        <button id="offline-library">Open Device media</button>
+      </div>
+    </section>
+
+    <section id="library">
+      <div class="library-head">
+        <h1>Device media</h1>
+        <div class="segmented" id="library-kind">
+          <button data-kind="all" class="on">All</button>
+          <button data-kind="video">Video</button>
+          <button data-kind="audio">Music</button>
+        </div>
+        <input id="library-search" type="search" placeholder="Search by name" spellcheck="false">
+        <div class="spacer"></div>
+        <button id="library-rescan" title="Look for the files again">Refresh</button>
+        <button id="library-add">Add folder</button>
+      </div>
+      <p id="library-status" class="muted"></p>
+      <div id="library-grid"></div>
+    </section>
+
+    <section id="player">
+      <div class="player-head">
+        <button id="player-close" class="tool" title="Close (Esc)">
+          <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <span id="player-title"></span>
+      </div>
+      <video id="player-video" controls></video>
+      <div id="player-error" class="notice">
+        <h2>This file can't be played here</h2>
+        <p id="player-error-text">Its format isn't one the built-in player knows.</p>
+        <div class="row">
+          <button id="player-external" class="primary">Open with the player of the system</button>
+          <button id="player-folder">Show in folder</button>
+        </div>
+      </div>
+    </section>
+
+    <aside id="panel">
+      <div class="panel-head">
+        <h2>Picture &amp; sound</h2>
+        <button id="panel-close" class="tool" title="Close (F2)">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+        </button>
+      </div>
+      <div class="panel-body">
+        <h3 id="cast-section">Play on a TV</h3>
+        <p class="muted cast-note">Sends the video that plays here to a TV, a Fire TV stick, a Google TV or Chromecast, or a console with the YouTube app. It continues there from the same spot.</p>
+        <div id="cast-devices"></div>
+        <div class="cast-row">
+          <button id="cast-search">Look for devices</button>
+          <span id="cast-status" class="muted"></span>
+        </div>
+        <div class="cast-row">
+          <input id="cast-code" type="text" inputmode="numeric" placeholder="TV code" spellcheck="false" autocomplete="off">
+          <button id="cast-link" class="primary">Link and play</button>
+        </div>
+        <p class="muted cast-note">The code: on the TV, YouTube &gt; Settings &gt; Link with TV code. To play from a phone on this PC, use the same menu here in YouTube.</p>
+
+        <h3>Picture</h3>
+        <label class="option">
+          <span><b>Best quality</b><small>Always the highest resolution the video has</small></span>
+          <input type="checkbox" data-key="bestQuality">
+        </label>
+        <div class="option">
+          <span><b>Sharpen</b><small>Crisper edges. Done by the graphics card</small></span>
+          <div class="segmented" data-key="sharpen">
+            <button data-value="off">Off</button>
+            <button data-value="light">Light</button>
+            <button data-value="strong">Strong</button>
+          </div>
+        </div>
+
+        <h3>Sound</h3>
+        <div class="option">
+          <span><b>Volume levelling</b><small>Loud scenes and quiet speech closer together</small></span>
+          <div class="segmented" data-key="levelling">
+            <button data-value="off">Off</button>
+            <button data-value="on">On</button>
+            <button data-value="night">Night</button>
+          </div>
+        </div>
+        <label class="option">
+          <span><b>Dialogue boost</b><small>Lifts voices above music and effects</small></span>
+          <input type="checkbox" data-key="dialogue">
+        </label>
+        <label class="option">
+          <span><b>Wide stereo</b><small>Stereo sound that reaches beyond the speakers</small></span>
+          <input type="checkbox" data-key="wide">
+        </label>
+
+        <h3>Skipping</h3>
+        <label class="option">
+          <span><b>No adverts</b><small>They are taken out before the page sees them</small></span>
+          <input type="checkbox" data-key="adblock">
+        </label>
+        <label class="option">
+          <span><b>Skip sponsored parts</b><small>Marked by viewers (SponsorBlock)</small></span>
+          <input type="checkbox" data-key="sponsorblock">
+        </label>
+        <div class="chips" id="sponsor-categories">
+          <button data-category="sponsor">Sponsor</button>
+          <button data-category="selfpromo">Self promotion</button>
+          <button data-category="interaction">Subscribe reminders</button>
+          <button data-category="intro">Intro</button>
+          <button data-category="outro">End credits</button>
+          <button data-category="preview">Previews</button>
+          <button data-category="music_offtopic">Non-music parts</button>
+        </div>
+
+        <h3>System</h3>
+        <label class="option">
+          <span><b>Use the graphics card</b><small>Video decoding and drawing by the hardware. Needs a restart</small></span>
+          <input type="checkbox" data-key="hardwareAcceleration">
+        </label>
+        <label class="option">
+          <span><b>Start in full screen</b><small>F11 switches at any time</small></span>
+          <input type="checkbox" data-key="startFullscreen">
+        </label>
+        <label class="option">
+          <span><b>Device media: all drives</b><small>Not only your Videos, Music and Downloads folders</small></span>
+          <input type="checkbox" data-key="allDrives">
+        </label>
+
+        <h3>Memory</h3>
+        <div class="memory">
+          <div class="meter"><div id="memory-bar"></div></div>
+          <p id="memory-app"></p>
+          <p id="memory-scratch" class="muted"></p>
+          <p id="memory-limits" class="muted"></p>
+        </div>
+
+        <h3>Account</h3>
+        <div class="option">
+          <span><b>YouTube account</b><small>Signing in happens inside of YouTube: Settings, then Accounts</small></span>
+          <button id="sign-out">Sign out</button>
+        </div>
+        <p class="muted about" id="about"></p>
+      </div>
+    </aside>
+  </main>
+
+  <script src="../inject/enhance.js"></script>
+  <script src="shell.js"></script>
+</body>
+</html>

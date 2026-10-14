@@ -24,5 +24,5 @@
         android:ellipsize="marquee"
         android:scrollHorizontally="true"
 
-        style="@style/TextAppearance.Leanback.Header"/>
+        android:textAppearance="?attr/sideMenuTextAppearance"/>
 </androidx.leanback.widget.NonOverlappingLinearLayout>

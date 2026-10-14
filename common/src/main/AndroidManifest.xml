@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <!-- Android 13+: the files of the device (the "Device media" section) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <!-- Android 10 and up. Start from background permission. Settings/Apps/Draw over other apps (disabled by default) -->
     <!-- https://developer.android.com/guide/components/activities/background-starts -->
@@ -19,6 +22,7 @@
     <!-- Starting targetSDK 33+, foreground services require explicit permissions in the manifest. -->
     <!-- NOTE: only works with 'mediaPlayback' type service. Others types will fail. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <queries>
         <!-- Android 11+: access package info (works only for specified apps) -->
@@ -65,6 +69,11 @@
         <service
             android:name="com.liskovsoft.smartyoutubetv2.common.misc.BackgroundPlaybackService"
             android:enabled="true"/>
+        <!-- Keeps the app alive while the videos are being saved -->
+        <service
+            android:name="com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
 
         <activity android:name=".misc.BackupReceiverActivity"
             android:exported="true">

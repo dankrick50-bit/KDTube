@@ -36,7 +36,7 @@ public final class DolbyVisionConfig {
     int dvProfile = (profileData >> 1);
     int dvLevel = ((profileData & 0x1) << 5) | ((data.readUnsignedByte() >> 3) & 0x1F);
     String codecsPrefix;
-    if (dvProfile == 4 || dvProfile == 5) {
+    if (dvProfile == 4 || dvProfile == 5 || dvProfile == 7) { // MOD: 7
       codecsPrefix = "dvhe";
     } else if (dvProfile == 8) {
       codecsPrefix = "hev1";
@@ -45,7 +45,7 @@ public final class DolbyVisionConfig {
     } else {
       return null;
     }
-    String codecs = codecsPrefix + ".0" + dvProfile + ".0" + dvLevel;
+    String codecs = codecsPrefix + ".0" + dvProfile + (dvLevel < 10 ? ".0" : ".") + dvLevel; // MOD: levels of two digits
     return new DolbyVisionConfig(dvProfile, dvLevel, codecs);
   }
 
@@ -55,6 +55,46 @@ public final class DolbyVisionConfig {
   public final int level;
   /** The RFC 6381 codecs string. */
   public final String codecs;
+
+  /**
+   * MOD: the Dolby Vision profile number (4, 5, 7, 8, 9...) of a format, or -1 if it isn't Dolby Vision.
+   */
+  public static int getProfileNumber(com.google.android.exoplayer2.Format format) {
+    if (!com.google.android.exoplayer2.util.MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)
+        || format.codecs == null) {
+      return -1;
+    }
+    // dvhe.05.06, dvh1.08.06, hev1.08.06, avc3.09.05
+    String[] parts = format.codecs.split("\\.");
+    if (parts.length < 2) {
+      return -1;
+    }
+    try {
+      return Integer.parseInt(parts[1]);
+    } catch (NumberFormatException e) {
+      return -1;
+    }
+  }
+
+  /**
+   * MOD: the MIME type of the decoders that can show a Dolby Vision format without knowing Dolby
+   * Vision, or null. Profile 8 and 7 carry an ordinary HDR10 (HLG, SDR) picture, 4 and 9 an SDR one.
+   * 5 has no such layer: an ordinary decoder shows it with wrong colors, which still beats no picture.
+   */
+  @Nullable
+  public static String getFallbackMimeType(com.google.android.exoplayer2.Format format) {
+    switch (getProfileNumber(format)) {
+      case 4:
+      case 5:
+      case 7:
+      case 8:
+        return com.google.android.exoplayer2.util.MimeTypes.VIDEO_H265;
+      case 9:
+        return com.google.android.exoplayer2.util.MimeTypes.VIDEO_H264;
+      default:
+        return null;
+    }
+  }
 
   private DolbyVisionConfig(int profile, int level, String codecs) {
     this.profile = profile;

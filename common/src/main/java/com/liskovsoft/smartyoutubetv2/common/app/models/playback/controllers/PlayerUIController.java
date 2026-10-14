@@ -13,6 +13,8 @@ import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
 import com.liskovsoft.mediaserviceinterfaces.data.NotificationState;
 import com.liskovsoft.mediaserviceinterfaces.data.PlaylistInfo;
 import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.smartyoutubetv2.common.misc.cast.CastDialogUtil;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadDialogUtil;
 import com.liskovsoft.sharedutils.helpers.KeyHelpers;
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
@@ -513,6 +515,35 @@ public class PlayerUIController extends BasePlayerController {
         dialogPresenter.showDialog(title);
     }
 
+    private void onDownloadClicked() {
+        if (getPlayer() == null || getVideo() == null) {
+            return;
+        }
+
+        fitVideoIntoDialog();
+
+        VideoLoaderController loader = getController(VideoLoaderController.class);
+        FormatItem audioFormat = getPlayer().getAudioFormat();
+
+        DownloadDialogUtil.showDownloadDialog(getContext(), getVideo(),
+                loader != null ? loader.getFormatInfo() : null, audioFormat != null ? audioFormat.getLanguage() : null);
+    }
+
+    private void onCastClicked() {
+        if (getPlayer() == null || getVideo() == null) {
+            return;
+        }
+
+        fitVideoIntoDialog();
+
+        CastDialogUtil.showCastDialog(getContext(), getVideo(), Utils.toSec(getPlayer().getPositionMs()), () -> {
+            // The video continues on the other device
+            if (getPlayer() != null) {
+                getPlayer().setPlayWhenReady(false);
+            }
+        });
+    }
+
     private void onShareLink() {
         fitVideoIntoDialog();
 
@@ -604,6 +635,10 @@ public class PlayerUIController extends BasePlayerController {
             onSeekInterval();
         } else if (buttonId == R.id.action_share) {
             onShareLink();
+        } else if (buttonId == R.id.action_download) {
+            onDownloadClicked();
+        } else if (buttonId == R.id.action_cast) {
+            onCastClicked();
         } else if (buttonId == R.id.action_info) {
             onVideoInfoClicked();
         } else if (buttonId == R.id.action_pip) {

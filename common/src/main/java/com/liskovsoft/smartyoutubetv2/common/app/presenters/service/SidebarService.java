@@ -7,6 +7,8 @@ import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.smartyoutubetv2.common.R;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
+import com.liskovsoft.smartyoutubetv2.common.misc.LocalMediaScanner;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs.ProfileChangeListener;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
@@ -27,6 +29,8 @@ public class SidebarService implements ProfileChangeListener {
     private boolean mIsSettingsSectionEnabled;
     private int mBootSectionId;
     private final static int RESERVED_ID = 100;
+    private boolean mIsDownloadsSectionAdded;
+    private boolean mIsLocalMediaSectionAdded;
 
     private SidebarService(Context context) {
         mContext = context.getApplicationContext();
@@ -253,6 +257,8 @@ public class SidebarService implements ProfileChangeListener {
         mDefaultSections.put(R.string.header_playlists, MediaGroup.TYPE_USER_PLAYLISTS);
         mDefaultSections.put(R.string.my_videos, MediaGroup.TYPE_MY_VIDEOS);
         mDefaultSections.put(R.string.playback_queue_category_title, MediaGroup.TYPE_PLAYBACK_QUEUE);
+        mDefaultSections.put(R.string.header_downloads, DownloadManager.SECTION_ID);
+        mDefaultSections.put(R.string.header_local_media, LocalMediaScanner.SECTION_ID);
         mDefaultSections.put(R.string.header_settings, MediaGroup.TYPE_SETTINGS);
     }
 
@@ -295,6 +301,8 @@ public class SidebarService implements ProfileChangeListener {
         mPinnedItems = Helpers.parseList(split, 0, Video::fromString);
         mBootSectionId = Helpers.parseInt(split, 1, MediaGroup.TYPE_HOME);
         mIsSettingsSectionEnabled = Helpers.parseBoolean(split, 2, true);
+        mIsDownloadsSectionAdded = Helpers.parseBoolean(split, 3, false);
+        mIsLocalMediaSectionAdded = Helpers.parseBoolean(split, 4, false);
 
         transferOldPinnedItems();
 
@@ -304,6 +312,17 @@ public class SidebarService implements ProfileChangeListener {
 
         // Backward compatibility
         enableSection(MediaGroup.TYPE_SETTINGS, true);
+
+        // The section is newer than the stored list: show it once, the user may hide it afterwards
+        if (!mIsDownloadsSectionAdded) {
+            mIsDownloadsSectionAdded = true;
+            enableSection(DownloadManager.SECTION_ID, true);
+        }
+
+        if (!mIsLocalMediaSectionAdded) {
+            mIsLocalMediaSectionAdded = true;
+            enableSection(LocalMediaScanner.SECTION_ID, true);
+        }
 
         cleanupPinnedItems();
     }
@@ -321,7 +340,7 @@ public class SidebarService implements ProfileChangeListener {
     }
 
     public void persistState() {
-        mPrefs.setSidebarData(Helpers.mergeData(mPinnedItems, mBootSectionId, mIsSettingsSectionEnabled));
+        mPrefs.setSidebarData(Helpers.mergeData(mPinnedItems, mBootSectionId, mIsSettingsSectionEnabled, mIsDownloadsSectionAdded, mIsLocalMediaSectionAdded));
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.DefaultLoadControl;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlayerFactory;
+import com.google.android.exoplayer2.LoadControl;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.audio.AudioAttributes;
@@ -22,6 +23,7 @@ import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.upstream.BandwidthMeter;
 import com.google.android.exoplayer2.upstream.TransferListener;
 import com.liskovsoft.sharedutils.helpers.DeviceHelpers;
+import com.liskovsoft.smartyoutubetv2.common.misc.MemoryKeeper;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 
@@ -29,6 +31,8 @@ import java.util.UUID;
 
 public class ExoPlayerInitializer {
     private final int mMaxBufferBytes;
+    private final long mDeviceRam;
+    private final MemoryKeeper mMemoryKeeper;
     private final PlayerData mPlayerData;
     private final PlayerTweaksData mPlayerTweaksData;
     private VolumeBooster mVolumeBooster;
@@ -46,10 +50,12 @@ public class ExoPlayerInitializer {
         // use 196MB as that can only happens if device has more than 17GB of RAM, so 196 is enough and safe
         // https://github.com/yuliskov/SmartYouTubeTV/issues/532
         mMaxBufferBytes = deviceRam <= 0 ? 196_000_000 : (int)(deviceRam / 18);
+        mDeviceRam = deviceRam;
+        mMemoryKeeper = MemoryKeeper.instance(context);
     }
 
     public SimpleExoPlayer createPlayer(Context context, DefaultRenderersFactory renderersFactory, DefaultTrackSelector trackSelector) {
-        DefaultLoadControl loadControl = createLoadControl();
+        LoadControl loadControl = createLoadControl();
 
         // HDR fix?
         //trackSelector.setParameters(trackSelector.buildUponParameters().setTunnelingAudioSessionId(C.generateAudioSessionIdV21(context)));
@@ -97,7 +103,7 @@ public class ExoPlayerInitializer {
      * Increase player's min/max buffer size to 60 secs
      * @return load control
      */
-    private DefaultLoadControl createLoadControl() {
+    private LoadControl createLoadControl() {
         DefaultLoadControl.Builder baseBuilder = new DefaultLoadControl.Builder();
 
         // Default values
@@ -145,7 +151,11 @@ public class ExoPlayerInitializer {
         // Decrease buffer size?
         //baseBuilder.setAllocator(new DefaultAllocator(true, 16 * 1024));
 
-        return baseBuilder.createDefaultLoadControl();
+        LoadControl loadControl = baseBuilder.createDefaultLoadControl();
+
+        // The durations above are the same for any stream: the size of a 4K one doesn't fit a small device.
+        // And the size that fits depends on what else runs on the device at the moment.
+        return new MemoryCappedLoadControl(loadControl, mMemoryKeeper);
     }
 
     private void setupVolumeBoost(SimpleExoPlayer player) {

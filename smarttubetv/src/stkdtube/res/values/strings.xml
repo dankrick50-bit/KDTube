@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string translatable="false" name="app_name"><![CDATA[KDTube]]></string>
+    <string translatable="false" name="browse_title"><![CDATA[KDTube]]></string>
+
+    <!-- Search from the home screen of the TV (overrides the values of the leanbackassistant module).
+         NOTE: search_authority and xml/searchable.xml must be the same as the applicationId -->
+    <string translatable="false" name="search_label">KDTube</string>
+    <string translatable="false" name="settings_description">KDTube Videos</string>
+    <string translatable="false" name="search_authority">com.kdtube.app</string>
+</resources>

@@ -1,0 +1,68 @@
+KDTube @VERSION@ for Android TV, Google TV, phones and tablets
+=======================================================
+
+Which file
+----------
+  KDTube-android-v@VERSION@-....apk         works on every ARM device. Use it when unsure.
+  KDTube-android-arm64-v@VERSION@-....apk   smaller: newer TVs (Shield, Chromecast with Google TV), current phones
+  KDTube-android-arm32-v@VERSION@-....apk   smaller: most TV boxes and sticks, older phones
+
+Installing without a computer
+-----------------------------
+1. Copy the apk file to the device: USB stick, cloud drive, or the app
+   "Send files to TV" (install it on the phone and on the TV).
+2. Open the file on the device with a file manager (on a TV: "File Commander",
+   "X-plore" or the file browser of "Send files to TV").
+3. The device asks to allow installing from this source: allow it, go back, install.
+4. The app appears in the list of apps as "KDTube".
+
+Installing from a computer (folder "From-a-PC")
+-----------------------------------------------
+  Windows:  run KDTube-tv-installer-windows-x64-....exe, type the address of the
+            TV / stick, press Install.
+  Ubuntu:   sudo apt install ./KDTube-tv-installer-ubuntu-all-....deb
+            then:  kdtube-install 192.168.1.50
+Both find the right file for the device, send it over the network, ask the device to
+prepare the app for its processor (it starts faster for it) and start it.
+The device has to allow it once: Settings > Device preferences > About, press
+"Build" 7 times; then Developer options > USB / Network debugging: on.
+
+If the device says "App not installed"
+--------------------------------------
+* Not enough free space: about 150 MB is needed.
+* Wrong file for the processor of the device: use the first one of the list above.
+* A KDTube that was signed with another key is installed: remove it first.
+
+KDTube installs next to SmartTube, it doesn't replace it. Coming from an earlier
+build of this app (it was called "SmartTube beta")? See README.md one folder up:
+"Coming from the earlier builds".
+
+New in this build
+-----------------
+* Play on another screen: the cast button of the player lists the screens of the
+  home network (smart TVs, Fire TV sticks, Chromecast / Google TV / Android TV
+  boxes, consoles) and "Link with TV code" for every other screen with a YouTube
+  app. The video continues there from the same spot.
+  The other way round (a phone plays on this device): Settings > Remote control.
+* "YouTube TV interface" (Settings): the interface of the PC edition, as an option
+  or as the start screen. It plays up to the resolution of the screen. The app's own
+  player stays the better choice on devices with little memory, and it is the one
+  with Dolby / DTS sound, downloads and frame rate switching.
+* Best sound by itself: the 5.1 track where a surround system or a Dolby decoder
+  is there, otherwise the stereo track with the highest bitrate. (Player: HQ
+  button > Audio formats shows what was chosen; any other choice stays possible.)
+* Dolby Digital, Dolby Digital Plus, Dolby TrueHD and DTS / DTS-HD sound plays on
+  every device. Where the device or the receiver behind it decodes the format, they
+  do it (this is how Dolby Atmos and DTS:X reach a receiver untouched). Where
+  nothing does, a decoder inside of the app takes over.
+  YouTube itself has no Dolby Atmos or Dolby Vision videos: this is for the files
+  under "Device media".
+* "Virtual surround" (player: HQ button > Picture & sound > Sound): 5.1 / 7.1 sound
+  on two speakers or headphones. "Auto" switches it on where there's no surround
+  system, and off where there is one.
+* Dolby Vision video plays in Dolby Vision where the device can do it, and as
+  normal HDR / standard video where it can't (before: no picture).
+* The app keeps an eye on the memory of the device: it shrinks its video buffer
+  when the device runs short, doesn't copy files into memory that are on the
+  device anyway, and leaves by itself when it sits unused in the background and
+  the system needs the memory.

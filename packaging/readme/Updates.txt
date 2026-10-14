@@ -1,0 +1,33 @@
+The update channel of KDTube (Android / Fire OS)
+================================================
+
+The app looks for updates here:
+
+    https://github.com/dankrick50-bit/KDTube/releases/download/latest/kdtube.json
+
+That is a release with the tag "latest" in your repository. Until it exists the app
+finds no update (checking by hand says so; nothing else happens).
+
+Publishing a version
+--------------------
+1. On GitHub: the repository > Releases > "Draft a new release" (or edit the one
+   that is there). Tag: latest
+2. Attach the four files of this folder:
+       kdtube.json
+       kdtube_armeabi-v7a.apk
+       kdtube_arm64-v8a.apk
+       kdtube_x86.apk
+   (replace the old ones when the release exists already)
+3. Publish. Every installed KDTube with a lower version offers the update at its
+   next check.
+
+Rules
+-----
+* The version in kdtube.json has to be higher than the installed one. It is the
+  "versionCode" of smarttubetv/build.gradle: raise it (and "versionName") before
+  building a new version.
+* The apk files must be signed with the same key as the installed app, otherwise
+  the device refuses the update. packaging/make-installers.sh takes care of it as
+  long as the key file stays the same. Keep a copy of the key in a safe place.
+* What the dialog of the update shows is the "changelog" list in kdtube.json:
+  edit it before publishing.

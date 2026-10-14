@@ -563,7 +563,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
     updatePlaybackPositions();
     long rendererPositionElapsedRealtimeUs = SystemClock.elapsedRealtime() * 1000;
 
-    playingPeriodHolder.mediaPeriod.discardBuffer(playbackInfo.positionUs - backBufferDurationUs,
+    // MOD: asked every time, not once at the start: the control may shorten the back buffer while playing
+    // (the device runs short of memory)
+    playingPeriodHolder.mediaPeriod.discardBuffer(
+        playbackInfo.positionUs - loadControl.getBackBufferDurationUs(),
         retainBackBufferFromKeyframe);
 
     boolean renderersEnded = true;

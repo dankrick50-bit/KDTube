@@ -27,6 +27,8 @@ import com.liskovsoft.smartyoutubetv2.common.misc.StreamReminderService;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AccountsData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 import com.liskovsoft.smartyoutubetv2.common.proxy.ProxyManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.TvInterfaceSettingsPresenter;
+import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.common.utils.IntentExtractor;
 import com.liskovsoft.smartyoutubetv2.common.utils.SimpleEditDialog;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
@@ -303,6 +305,11 @@ public class SplashPresenter extends BasePresenter<SplashView> {
         mIntentChain.add(intent -> {
             ViewManager viewManager = getViewManager();
             viewManager.startDefaultView();
+
+            // The user prefers the YouTube TV interface: it opens on top (the "back" of it leads here)
+            if (!IntentExtractor.hasData(intent) && MainUIData.instance(getContext()).isTvInterfaceOnStartEnabled()) {
+                TvInterfaceSettingsPresenter.open(getContext());
+            }
 
             // For debug purpose when using ATV bridge.
             if (IntentExtractor.hasData(intent) && !IntentExtractor.isATVChannelUrl(intent) && !IntentExtractor.isRootUrl(intent)) {

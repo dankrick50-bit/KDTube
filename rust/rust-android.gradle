@@ -1,0 +1,134 @@
+/*
+ * Optional native core (rust/kdtube-core) for the app module.
+ *
+ * OFF by default: nothing in this file does anything unless the build is started with
+ * -PrustCore (or rustCore=true in gradle.properties / ~/.gradle/gradle.properties).
+ * Without the library the app works exactly as before (pure Java json engine),
+ * so nobody needs Rust or a newer NDK just to build the app.
+ *
+ * When enabled, libkdtube_core.so is built for each abi and packaged like any other jni lib.
+ *
+ * Requirements:
+ *   - rustup with the android targets:
+ *       rustup target add armv7-linux-androideabi aarch64-linux-android i686-linux-android
+ *   - Android NDK r25 or newer. NOTE: 'ndkVersion' of the app module (r21) is too old for rustc.
+ *     The newest suitable one from <sdk>/ndk is used. To pick another one:
+ *       -PrustNdkDir=/path/to/ndk   or   ANDROID_NDK_HOME
+ *
+ * Options:
+ *   -PrustAbis=armeabi-v7a,arm64-v8a,x86     abis to build (that's the default)
+ */
+
+def rustCoreEnabled = project.hasProperty('rustCore') && project.property('rustCore').toString() != 'false'
+
+if (rustCoreEnabled) {
+    def crateDir = rootProject.file('rust/kdtube-core')
+    def jniLibsDir = new File(buildDir, 'rustJniLibs')
+    def libName = 'libkdtube_core.so'
+    // The lowest api level that current NDKs and rustc support. Older devices use the Java engine.
+    def minApi = 21
+    def minNdkMajor = 25
+
+    def targets = [
+            'armeabi-v7a': [triple: 'armv7-linux-androideabi', clang: 'armv7a-linux-androideabi'],
+            'arm64-v8a'  : [triple: 'aarch64-linux-android', clang: 'aarch64-linux-android'],
+            'x86'        : [triple: 'i686-linux-android', clang: 'i686-linux-android'],
+            'x86_64'     : [triple: 'x86_64-linux-android', clang: 'x86_64-linux-android'],
+    ]
+
+    def abis = (project.findProperty('rustAbis') ?: 'armeabi-v7a,arm64-v8a,x86').toString().split(',').collect { it.trim() }.findAll { it }
+
+    abis.each { abi ->
+        if (!targets.containsKey(abi)) {
+            throw new GradleException("rustAbis: unknown abi '${abi}'. Known: ${targets.keySet()}")
+        }
+    }
+
+    def os = org.gradle.internal.os.OperatingSystem.current()
+    def hostTag = os.isWindows() ? 'windows-x86_64' : (os.isMacOsX() ? 'darwin-x86_64' : 'linux-x86_64')
+    def clangSuffix = os.isWindows() ? '.cmd' : ''
+
+    def ndkMajor = { File dir ->
+        def props = new File(dir, 'source.properties')
+        if (!props.isFile()) {
+            return 0
+        }
+        def matcher = props.text =~ /Pkg\.Revision\s*=\s*(\d+)/
+        return matcher.find() ? matcher.group(1).toInteger() : 0
+    }
+
+    def findNdk = {
+        def candidates = []
+
+        if (project.hasProperty('rustNdkDir')) {
+            candidates << new File(project.property('rustNdkDir').toString())
+        }
+
+        ['ANDROID_NDK_HOME', 'ANDROID_NDK_ROOT'].each { name ->
+            if (System.getenv(name)) {
+                candidates << new File(System.getenv(name))
+            }
+        }
+
+        def sideBySide = new File(android.sdkDirectory, 'ndk')
+        if (sideBySide.isDirectory()) {
+            candidates.addAll(sideBySide.listFiles().findAll { it.isDirectory() }.sort { a, b -> ndkMajor(b) <=> ndkMajor(a) })
+        }
+
+        def ndk = candidates.find { ndkMajor(it) >= minNdkMajor }
+
+        if (ndk == null) {
+            throw new GradleException("rustCore: Android NDK r${minNdkMajor}+ not found. Install one with the SDK manager " +
+                    "or point to it: -PrustNdkDir=/path/to/ndk (looked at: ${candidates ?: 'nothing'})")
+        }
+
+        return ndk
+    }
+
+    def cargoBuild = tasks.register('cargoBuild') {
+        group = 'rust'
+        description = "Builds ${libName} for ${abis.join(', ')}"
+    }
+
+    abis.each { abi ->
+        def target = targets[abi]
+        def abiDir = new File(jniLibsDir, abi)
+
+        def abiTask = tasks.register("cargoBuild${abi.replaceAll('[^A-Za-z0-9]', '').capitalize()}", Exec) {
+            group = 'rust'
+            description = "Builds ${libName} for ${abi}"
+            workingDir crateDir
+            commandLine 'cargo', 'build', '--release', '--lib', '--target', target.triple
+
+            inputs.dir(new File(crateDir, 'src'))
+            inputs.file(new File(crateDir, 'Cargo.toml'))
+            inputs.files(fileTree(crateDir) { include 'Cargo.lock', '.cargo/config.toml' })
+            outputs.file(new File(abiDir, libName))
+
+            doFirst {
+                def linker = new File(findNdk(), "toolchains/llvm/prebuilt/${hostTag}/bin/${target.clang}${minApi}-clang${clangSuffix}")
+
+                if (!linker.isFile()) {
+                    throw new GradleException("rustCore: linker not found: ${linker}")
+                }
+
+                environment "CARGO_TARGET_${target.triple.toUpperCase().replace('-', '_')}_LINKER", linker.absolutePath
+            }
+
+            doLast {
+                project.copy {
+                    from new File(crateDir, "target/${target.triple}/release/${libName}")
+                    into abiDir
+                }
+            }
+        }
+
+        cargoBuild.configure { dependsOn abiTask }
+    }
+
+    android.sourceSets.main.jniLibs.srcDir jniLibsDir
+
+    tasks.matching { it.name.startsWith('merge') && it.name.endsWith('JniLibFolders') }.configureEach {
+        dependsOn cargoBuild
+    }
+}

@@ -44,6 +44,7 @@ import com.google.android.exoplayer2.util.ParsableByteArray;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.video.AvcConfig;
 import com.google.android.exoplayer2.video.ColorInfo;
+import com.google.android.exoplayer2.video.DolbyVisionConfig;
 import com.google.android.exoplayer2.video.HevcConfig;
 import java.io.IOException;
 import java.lang.annotation.Documented;
@@ -198,6 +199,14 @@ public class MatroskaExtractor implements Extractor {
   private static final int ID_PROJECTION_POSE_ROLL = 0x7675;
   private static final int ID_STEREO_MODE = 0x53B8;
   private static final int ID_COLOUR = 0x55B0;
+  // MOD: Dolby Vision
+  private static final int ID_BLOCK_ADDITION_MAPPING = 0x41E4;
+  private static final int ID_BLOCK_ADD_ID_TYPE = 0x41E7;
+  private static final int ID_BLOCK_ADD_ID_EXTRA_DATA = 0x41ED;
+  /** BlockAddIdType value for Dolby Vision configuration with profile <= 7. */
+  private static final int BLOCK_ADD_ID_TYPE_DVCC = 0x64766343;
+  /** BlockAddIdType value for Dolby Vision configuration with profile > 7. */
+  private static final int BLOCK_ADD_ID_TYPE_DVVC = 0x64767643;
   private static final int ID_COLOUR_RANGE = 0x55B9;
   private static final int ID_COLOUR_TRANSFER = 0x55BA;
   private static final int ID_COLOUR_PRIMARIES = 0x55BB;
@@ -482,6 +491,7 @@ public class MatroskaExtractor implements Extractor {
       case ID_PROJECTION:
       case ID_COLOUR:
       case ID_MASTERING_METADATA:
+      case ID_BLOCK_ADDITION_MAPPING:
         return EbmlProcessor.ELEMENT_TYPE_MASTER;
       case ID_EBML_READ_VERSION:
       case ID_DOC_TYPE_READ_VERSION:
@@ -518,6 +528,7 @@ public class MatroskaExtractor implements Extractor {
       case ID_MAX_CLL:
       case ID_MAX_FALL:
       case ID_PROJECTION_TYPE:
+      case ID_BLOCK_ADD_ID_TYPE:
         return EbmlProcessor.ELEMENT_TYPE_UNSIGNED_INT;
       case ID_DOC_TYPE:
       case ID_NAME:
@@ -531,6 +542,7 @@ public class MatroskaExtractor implements Extractor {
       case ID_BLOCK:
       case ID_CODEC_PRIVATE:
       case ID_PROJECTION_PRIVATE:
+      case ID_BLOCK_ADD_ID_EXTRA_DATA:
         return EbmlProcessor.ELEMENT_TYPE_BINARY;
       case ID_DURATION:
       case ID_SAMPLING_FREQUENCY:
@@ -710,6 +722,11 @@ public class MatroskaExtractor implements Extractor {
   @CallSuper
   protected void integerElement(int id, long value) throws ParserException {
     switch (id) {
+      case ID_BLOCK_ADD_ID_TYPE:
+        if (currentTrack != null) {
+          currentTrack.blockAddIdType = (int) value;
+        }
+        break;
       case ID_EBML_READ_VERSION:
         // Validate that EBMLReadVersion is supported. This extractor only supports v1.
         if (value != 1) {
@@ -1028,6 +1045,16 @@ public class MatroskaExtractor implements Extractor {
         currentTrack.projectionData = new byte[contentSize];
         input.readFully(currentTrack.projectionData, 0, contentSize);
         break;
+      case ID_BLOCK_ADD_ID_EXTRA_DATA:
+        if (currentTrack != null
+            && (currentTrack.blockAddIdType == BLOCK_ADD_ID_TYPE_DVVC
+                || currentTrack.blockAddIdType == BLOCK_ADD_ID_TYPE_DVCC)) {
+          currentTrack.dolbyVisionConfigBytes = new byte[contentSize];
+          input.readFully(currentTrack.dolbyVisionConfigBytes, 0, contentSize);
+        } else {
+          input.skipFully(contentSize);
+        }
+        break;
       case ID_CONTENT_COMPRESSION_SETTINGS:
         // This extractor only supports header stripping, so the payload is the stripped bytes.
         currentTrack.sampleStrippedBytes = new byte[contentSize];
@@ -1072,7 +1099,8 @@ public class MatroskaExtractor implements Extractor {
             blockLacingSampleSizes = ensureArrayCapacity(blockLacingSampleSizes, 1);
             blockLacingSampleSizes[0] = contentSize - blockTrackNumberLength - 3;
           } else {
-            if (id != ID_SIMPLE_BLOCK) {
+            // MOD: laced audio is fine in a BlockGroup too (older files with DTS, AC-3, MP3)
+            if (id != ID_SIMPLE_BLOCK && track.type != TRACK_TYPE_AUDIO) {
               throw new ParserException("Lacing only supported in SimpleBlocks.");
             }
 
@@ -1155,7 +1183,8 @@ public class MatroskaExtractor implements Extractor {
           blockLacingSampleIndex = 0;
         }
 
-        if (id == ID_SIMPLE_BLOCK) {
+        // MOD: the frames of laced audio are all key frames: the rest of the BlockGroup has nothing to add
+        if (id == ID_SIMPLE_BLOCK || (track.type == TRACK_TYPE_AUDIO && blockLacingSampleCount > 1)) {
           // For SimpleBlock, we have metadata for each sample here.
           while (blockLacingSampleIndex < blockLacingSampleCount) {
             writeSampleData(input, track, blockLacingSampleSizes[blockLacingSampleIndex]);
@@ -1718,6 +1747,9 @@ public class MatroskaExtractor implements Extractor {
     public TrackOutput.CryptoData cryptoData;
     public byte[] codecPrivate;
     public DrmInitData drmInitData;
+    // MOD: Dolby Vision
+    public int blockAddIdType;
+    public byte[] dolbyVisionConfigBytes;
 
     // Video elements.
     public int width = Format.NO_VALUE;
@@ -1913,6 +1945,18 @@ public class MatroskaExtractor implements Extractor {
           throw new ParserException("Unrecognized codec identifier.");
       }
 
+      // MOD: Dolby Vision
+      String codecs = null;
+      if (dolbyVisionConfigBytes != null && dolbyVisionConfigBytes.length >= 4
+          && (MimeTypes.VIDEO_H265.equals(mimeType) || MimeTypes.VIDEO_H264.equals(mimeType))) {
+        DolbyVisionConfig dolbyVisionConfig =
+            DolbyVisionConfig.parse(new ParsableByteArray(dolbyVisionConfigBytes));
+        if (dolbyVisionConfig != null) {
+          codecs = dolbyVisionConfig.codecs;
+          mimeType = MimeTypes.VIDEO_DOLBY_VISION;
+        }
+      }
+
       int type;
       Format format;
       @C.SelectionFlags int selectionFlags = 0;
@@ -1970,7 +2014,7 @@ public class MatroskaExtractor implements Extractor {
             Format.createVideoSampleFormat(
                 Integer.toString(trackId),
                 mimeType,
-                /* codecs= */ null,
+                codecs,
                 /* bitrate= */ Format.NO_VALUE,
                 maxInputSize,
                 width,

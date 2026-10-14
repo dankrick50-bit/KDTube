@@ -71,3 +71,6 @@ tmp/
 fabric.properties
 *BAK.java
 hs_err_pid*.log
+
+# Installers are built locally (packaging/make-installers.sh): too big for git
+/installers/

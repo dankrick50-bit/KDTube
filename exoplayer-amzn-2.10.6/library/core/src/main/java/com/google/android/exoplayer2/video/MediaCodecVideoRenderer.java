@@ -361,6 +361,27 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
       throws DecoderQueryException {
     List<MediaCodecInfo> decoderInfos =
         mediaCodecSelector.getDecoderInfos(format.sampleMimeType, requiresSecureDecoder, tunneling);
+    // MOD: Dolby Vision on a device that has no decoder for it (or not for this profile): the
+    // compatible layer of the picture is played by an ordinary HEVC / AVC decoder.
+    String fallbackMimeType = DolbyVisionConfig.getFallbackMimeType(format);
+    if (fallbackMimeType != null) {
+      int profileNumber = DolbyVisionConfig.getProfileNumber(format);
+      List<MediaCodecInfo> sorted = new java.util.ArrayList<>();
+      // First the decoders of Dolby Vision that know the profile
+      for (MediaCodecInfo decoderInfo : decoderInfos) {
+        if (decoderInfo.isDolbyVisionProfileSupported(profileNumber)) {
+          sorted.add(decoderInfo);
+        }
+      }
+      sorted.addAll(
+          mediaCodecSelector.getDecoderInfos(fallbackMimeType, requiresSecureDecoder, tunneling));
+      for (MediaCodecInfo decoderInfo : decoderInfos) {
+        if (!sorted.contains(decoderInfo)) {
+          sorted.add(decoderInfo);
+        }
+      }
+      decoderInfos = sorted;
+    }
     return Collections.unmodifiableList(decoderInfos);
   }
 
@@ -1187,7 +1208,10 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
     MediaFormatUtil.maybeSetFloat(mediaFormat, MediaFormat.KEY_FRAME_RATE, format.frameRate);
     MediaFormatUtil.maybeSetInteger(mediaFormat, MediaFormat.KEY_ROTATION, format.rotationDegrees);
     MediaFormatUtil.maybeSetColorInfo(mediaFormat, format.colorInfo);
-    if (MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
+    if (MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)
+        // MOD: not for the ordinary decoders that play the compatible layer
+        && !MimeTypes.VIDEO_H265.equals(codecMimeType)
+        && !MimeTypes.VIDEO_H264.equals(codecMimeType)) {
       // Some phones require the profile to be set on the codec.
       // See https://github.com/google/ExoPlayer/pull/5438.
       Pair<Integer, Integer> codecProfileAndLevel =

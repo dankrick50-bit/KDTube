@@ -43,11 +43,23 @@ public class PlayerTweaksData implements ProfileChangeListener {
     public static final int PLAYER_BUTTON_SOUND_OFF = 1 << 25;
     public static final int PLAYER_BUTTON_AFR = 1 << 26;
     public static final int PLAYER_BUTTON_VIDEO_FLIP = 1 << 27;
+    /**
+     * Surround sound is mixed down for two channels by the app when the output has only two
+     */
+    public static final int VIRTUAL_SURROUND_AUTO = 0;
+    public static final int VIRTUAL_SURROUND_ON = 1;
+    public static final int VIRTUAL_SURROUND_OFF = 2;
+    public static final int SHARPEN_OFF = 0;
+    public static final int SHARPEN_LIGHT = 1;
+    public static final int SHARPEN_STRONG = 2;
+    public static final int PLAYER_BUTTON_DOWNLOAD = 1 << 28;
+    public static final int PLAYER_BUTTON_CAST = 1 << 29;
+    // NOTE: 1 << 30 is taken (the mark of the old format)
     public static final int PLAYER_BUTTON_DEFAULT = PLAYER_BUTTON_SEARCH | PLAYER_BUTTON_PIP | PLAYER_BUTTON_SCREEN_DIMMING | PLAYER_BUTTON_VIDEO_SPEED |
             PLAYER_BUTTON_VIDEO_STATS | PLAYER_BUTTON_OPEN_CHANNEL | PLAYER_BUTTON_SUBTITLES | PLAYER_BUTTON_SUBSCRIBE |
             PLAYER_BUTTON_LIKE | PLAYER_BUTTON_DISLIKE | PLAYER_BUTTON_ADD_TO_PLAYLIST | PLAYER_BUTTON_PLAY_PAUSE |
             PLAYER_BUTTON_REPEAT_MODE | PLAYER_BUTTON_NEXT | PLAYER_BUTTON_PREVIOUS | PLAYER_BUTTON_HIGH_QUALITY |
-            PLAYER_BUTTON_VIDEO_INFO | PLAYER_BUTTON_CHAT;
+            PLAYER_BUTTON_VIDEO_INFO | PLAYER_BUTTON_CHAT | PLAYER_BUTTON_DOWNLOAD | PLAYER_BUTTON_CAST;
     public static final int DNS_TYPE_SYSTEM = GlobalPreferences.DNS_TYPE_SYSTEM;
     public static final int DNS_TYPE_IPV4 = GlobalPreferences.DNS_TYPE_IPV4;
     public static final int DNS_TYPE_GOOGLE = GlobalPreferences.DNS_TYPE_GOOGLE;
@@ -69,6 +81,13 @@ public class PlayerTweaksData implements ProfileChangeListener {
     private boolean mIsPlaybackNotificationsDisabled;
     private boolean mIsTunneledPlaybackEnabled;
     private int mPlayerButtons;
+    private boolean mIsDownloadCastButtonsAdded;
+    private int mSharpenLevel;
+    private int mSoundLevelling;
+    private boolean mIsDialogueBoostEnabled;
+    private boolean mIsWideStereoEnabled;
+    private boolean mIsVirtualSurroundEnabled;
+    private int mVirtualSurroundMode;
     private boolean mIsAltPresetsEnabled;
     private boolean mIsRememberPositionOfShortVideosEnabled;
     private boolean mIsRememberPositionOfLiveVideosEnabled;
@@ -551,6 +570,60 @@ public class PlayerTweaksData implements ProfileChangeListener {
         persistData();
     }
 
+    /**
+     * One of SHARPEN_*
+     */
+    public int getSharpenLevel() {
+        return mSharpenLevel;
+    }
+
+    public void setSharpenLevel(int level) {
+        mSharpenLevel = level;
+        persistData();
+    }
+
+    /**
+     * One of SoundEnhanceProcessor.LEVELLING_*
+     */
+    public int getSoundLevelling() {
+        return mSoundLevelling;
+    }
+
+    public void setSoundLevelling(int levelling) {
+        mSoundLevelling = levelling;
+        persistData();
+    }
+
+    public boolean isDialogueBoostEnabled() {
+        return mIsDialogueBoostEnabled;
+    }
+
+    public void setDialogueBoostEnabled(boolean enable) {
+        mIsDialogueBoostEnabled = enable;
+        persistData();
+    }
+
+    public boolean isWideStereoEnabled() {
+        return mIsWideStereoEnabled;
+    }
+
+    public void setWideStereoEnabled(boolean enable) {
+        mIsWideStereoEnabled = enable;
+        persistData();
+    }
+
+    /**
+     * @return one of the VIRTUAL_SURROUND constants
+     */
+    public int getVirtualSurroundMode() {
+        return mVirtualSurroundMode;
+    }
+
+    public void setVirtualSurroundMode(int mode) {
+        mVirtualSurroundMode = mode;
+        persistData();
+    }
+
     public boolean isAudioFocusEnabled() {
         return mIsAudioFocusEnabled;
     }
@@ -764,6 +837,19 @@ public class PlayerTweaksData implements ProfileChangeListener {
         mIsQuickSkipVideosAltEnabled = Helpers.parseBoolean(split, 58, false);
         mIsAudioTimeStretchingEnabled = Helpers.parseBoolean(split, 59, true);
         mIsQueueRespectsPlaybackMode = Helpers.parseBoolean(split, 60, false);
+        mIsDownloadCastButtonsAdded = Helpers.parseBoolean(split, 61, false);
+        mSharpenLevel = Helpers.parseInt(split, 62, SHARPEN_OFF);
+        mSoundLevelling = Helpers.parseInt(split, 63, 0);
+        mIsDialogueBoostEnabled = Helpers.parseBoolean(split, 64, false);
+        mIsWideStereoEnabled = Helpers.parseBoolean(split, 65, false);
+        mIsVirtualSurroundEnabled = Helpers.parseBoolean(split, 66, false);
+        mVirtualSurroundMode = Helpers.parseInt(split, 67, mIsVirtualSurroundEnabled ? VIRTUAL_SURROUND_ON : VIRTUAL_SURROUND_AUTO);
+
+        // The buttons are newer than the stored set: show them once, the user may hide them afterwards
+        if (!mIsDownloadCastButtonsAdded) {
+            mIsDownloadCastButtonsAdded = true;
+            mPlayerButtons |= PLAYER_BUTTON_DOWNLOAD | PLAYER_BUTTON_CAST;
+        }
 
         updateDefaultValues();
     }
@@ -791,7 +877,9 @@ public class PlayerTweaksData implements ProfileChangeListener {
                 mIsUnsafeAudioFormatsEnabled, null, mIsLoopShortsEnabled, mIsQuickSkipShortsEnabled, mIsRememberPositionOfLiveVideosEnabled,
                 mIsOculusQuestFixEnabled, null, mIsExtraLongSpeedListEnabled, mIsQuickSkipVideosEnabled, mIsNetworkErrorFixingDisabled, mIsCommentsPlacedLeft,
                 null, mIsAudioFocusEnabled, mIsDontResizeVideoToFitDialogEnabled, mIsSuggestionsHorizontallyScrolled,
-                mIsQuickSkipShortsAltEnabled, mIsQuickSkipVideosAltEnabled, mIsAudioTimeStretchingEnabled, mIsQueueRespectsPlaybackMode
+                mIsQuickSkipShortsAltEnabled, mIsQuickSkipVideosAltEnabled, mIsAudioTimeStretchingEnabled, mIsQueueRespectsPlaybackMode,
+                mIsDownloadCastButtonsAdded, mSharpenLevel, mSoundLevelling, mIsDialogueBoostEnabled, mIsWideStereoEnabled,
+                mIsVirtualSurroundEnabled, mVirtualSurroundMode
                 ));
     }
 

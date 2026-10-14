@@ -20,6 +20,11 @@ public interface FormatItem {
     FormatItem AUDIO_HQ_MP4A = ExoFormatItem.fromAudioSpecs(String.format("%s,null", "mp4a")); // Note, 5.1 mp4a doesn't work in 5.1 mode
     FormatItem AUDIO_51_EC3 = ExoFormatItem.fromAudioSpecs(String.format("%s,null", "ec-3")); // Note, 5.1 mp4a doesn't work in 5.1 mode
     FormatItem AUDIO_51_AC3 = ExoFormatItem.fromAudioSpecs(String.format("%s,null", "ac-3")); // Note, 5.1 mp4a doesn't work in 5.1 mode
+    /**
+     * Not a codec: "the best track the video has for what the sound goes to". See TrackSelectorManager.findBestAudio
+     */
+    String BEST_AUDIO_CODEC = "best";
+    FormatItem AUDIO_BEST = ExoFormatItem.fromAudioSpecs(String.format("%s,null", BEST_AUDIO_CODEC));
     int TYPE_VIDEO = 0;
     int TYPE_AUDIO = 1;
     int TYPE_SUBTITLE = 2;

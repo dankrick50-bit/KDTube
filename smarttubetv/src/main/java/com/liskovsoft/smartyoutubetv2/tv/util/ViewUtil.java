@@ -172,6 +172,14 @@ public class ViewUtil {
         return true;
     }
 
+    /**
+     * @return the color the theme has for the attribute, the fallback if it has none
+     */
+    public static int getThemeColor(Context context, int attrResId, int fallbackColorResId) {
+        int colorResId = Helpers.getThemeAttr(context, attrResId);
+        return ContextCompat.getColor(context, colorResId > 0 ? colorResId : fallbackColorResId);
+    }
+
     public static RequestOptions glideOptions() {
         return new RequestOptions()
                 .diskCacheStrategy(DiskCacheStrategy.NONE) // ensure start animation from beginning

@@ -72,6 +72,8 @@ dependencies {
     implementation project(':exoplayer-library')
     implementation project(':exoplayer-extension-okhttp')
     implementation project(':exoplayer-extension-cronet')
+    // Software decoders for Dolby Digital (Plus), Dolby TrueHD and DTS: used when the device has none of its own
+    implementation project(':exoplayer-extension-ffmpeg')
 
     // implementation 'com.amazon.android:exoplayer:' + amazonExoplayerVersion
     // implementation 'com.amazon.android:extension-okhttp:' + amazonExoplayerVersion

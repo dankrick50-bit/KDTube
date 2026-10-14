@@ -1,0 +1,6 @@
+# cargo build output
+/target
+
+# jars downloaded by verify/run.sh, compiled test classes
+/verify/lib
+/verify/out

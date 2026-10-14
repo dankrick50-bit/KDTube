@@ -101,7 +101,13 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
     private float mUIScale;
     private float mVideoGridScale;
     private final List<ColorScheme> mColorSchemes = new ArrayList<>();
+    /**
+     * See {@link #initColorSchemes()}
+     */
+    private static final int COLOR_SCHEME_MODERN_INDEX = 8;
     private int mColorSchemeIndex;
+    private boolean mIsModernSchemeApplied;
+    private boolean mIsTvInterfaceOnStartEnabled;
     private int mChannelCategorySorting;
     private int mPlaylistsStyle;
     private boolean mIsUploadsOldLookEnabled;
@@ -421,6 +427,13 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
                 "App.Theme.Leanback.Blue.OLED.Browse",
                 "App.Theme.Leanback.Blue.Preferences",
                 mContext));
+        // NOTE: the index is stored. Add the new ones to the end.
+        mColorSchemes.add(new ColorScheme(
+                R.string.color_scheme_modern,
+                "App.Theme.Modern.Player",
+                "App.Theme.Modern.Browse",
+                "App.Theme.Modern.Preferences",
+                mContext));
     }
 
     private void restoreState() {
@@ -431,7 +444,7 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
         //mIsCardAnimatedPreviewsEnabled = Helpers.parseBoolean(split, 0, true);
         mVideoGridScale = Helpers.parseFloat(split, 1, 1.0f); // 4 cards in a row
         mUIScale = Helpers.parseFloat(split, 2, 1.0f);
-        mColorSchemeIndex = Helpers.parseInt(split, 3, 1);
+        mColorSchemeIndex = Helpers.parseInt(split, 3, COLOR_SCHEME_MODERN_INDEX);
         mIsCardMultilineTitleEnabled = Helpers.parseBoolean(split, 4, true);
         mChannelCategorySorting = Helpers.parseInt(split, 5, CHANNEL_SORTING_LAST_VIEWED);
         mPlaylistsStyle = Helpers.parseInt(split, 6, PLAYLISTS_STYLE_GRID);
@@ -452,6 +465,14 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
         mCardPreviewType = Helpers.parseInt(split, 21, CARD_PREVIEW_DISABLED);
         mIsUnlocalizedTitlesEnabled = Helpers.parseBoolean(split, 22, false);
         mUiTweaks = Helpers.parseLong(split, 23, UI_TWEAK_DEFAULT);
+        mIsModernSchemeApplied = Helpers.parseBoolean(split, 24, false);
+        mIsTvInterfaceOnStartEnabled = Helpers.parseBoolean(split, 25, false);
+
+        // The scheme is newer than the stored choice: switch to it once, the user may switch back afterwards
+        if (!mIsModernSchemeApplied) {
+            mIsModernSchemeApplied = true;
+            mColorSchemeIndex = COLOR_SCHEME_MODERN_INDEX;
+        }
 
         int idx = -1;
         for (Long menuItem : MENU_ITEM_DEFAULT_ORDER) {
@@ -487,6 +508,18 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
         Utils.post(mPersistStateInt);
     }
 
+    /**
+     * Start with the YouTube TV interface (the one of the PC edition) instead of the interface of the app
+     */
+    public boolean isTvInterfaceOnStartEnabled() {
+        return mIsTvInterfaceOnStartEnabled;
+    }
+
+    public void setTvInterfaceOnStartEnabled(boolean enable) {
+        mIsTvInterfaceOnStartEnabled = enable;
+        persistState();
+    }
+
     private void persistState() {
         onDataChange();
         Utils.postDelayed(mPersistStateInt, 10_000);
@@ -499,7 +532,7 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
                 mIsUploadsOldLookEnabled, mIsUploadsAutoLoadEnabled, mCardTextScrollSpeed, mMenuItems, mTopButtons,
                 null, mThumbQuality, mIsCardMultilineSubtitleEnabled, Helpers.mergeList(mMenuItemsOrdered),
                 mIsChannelsFilterEnabled, mIsChannelSearchBarEnabled, mIsPinnedChannelRowsEnabled, mCardPreviewType,
-                mIsUnlocalizedTitlesEnabled, mUiTweaks));
+                mIsUnlocalizedTitlesEnabled, mUiTweaks, mIsModernSchemeApplied, mIsTvInterfaceOnStartEnabled));
     }
 
     public static class ColorScheme {

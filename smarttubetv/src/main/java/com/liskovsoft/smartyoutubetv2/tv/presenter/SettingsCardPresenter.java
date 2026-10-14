@@ -33,7 +33,7 @@ public class SettingsCardPresenter extends Presenter {
         mSelectedBackgroundColor =
                 ContextCompat.getColor(context, R.color.card_selected_background_white);
         mSelectedTextColor =
-                ContextCompat.getColor(context, R.color.card_selected_text_grey);
+                ViewUtil.getThemeColor(context, R.attr.cardSelectedTextColor, R.color.card_selected_text_grey);
 
         @SuppressLint("InflateParams")
         View container = LayoutInflater.from(context).inflate(R.layout.settings_card, null);

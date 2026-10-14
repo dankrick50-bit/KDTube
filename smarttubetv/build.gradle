@@ -107,6 +107,13 @@ android {
 
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
+            // Optional: remove the library code that is never used. Start the build with -PshrinkRelease
+            // Nothing is renamed or optimized (see proguard-shrink.pro)
+            if (project.hasProperty('shrinkRelease')) {
+                minifyEnabled true
+                proguardFiles = [getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro', 'proguard-shrink.pro']
+            }
+
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release
             }
@@ -132,8 +139,19 @@ android {
 
             def newApkName = sprintf("%s_%s_%s_%s.apk", [project, flavor, version, arch])
 
+            if (flavor == "kdtube") {
+                newApkName = sprintf("KDTube_%s_%s.apk", [version, arch])
+            }
+
             // gradle 4.6 migration
             output.outputFileName = new File(newApkName)
+        }
+    }
+
+    // The page scripts of the YouTube TV interface: the same files as in the PC edition
+    sourceSets {
+        main {
+            assets.srcDirs += [rootProject.file('desktop/app/inject')]
         }
     }
 
@@ -159,6 +177,14 @@ android {
 
     // NOTE: The main goal of prefixing a flavor is to group flavors' folders together
     productFlavors {
+        // KDTube under its own name and id: installs next to the SmartTube builds, has its own
+        // update channel (see src/stkdtube/res/values/update_urls.xml) and no Firebase.
+        stkdtube {
+            applicationId "com.kdtube.app"
+            targetSdkVersion project.properties.compileSdkVersion
+            // The libraries don't have this flavor: they are the same as in the beta
+            matchingFallbacks = ['stbeta']
+        }
         stbeta {
             applicationId "org.smarttube.beta"
             targetSdkVersion project.properties.compileSdkVersion
@@ -179,6 +205,9 @@ android {
         }
     }
 }
+
+// Optional native core (low memory json engine). Does nothing unless the build is started with -PrustCore
+apply from: rootProject.file('rust/rust-android.gradle')
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')

@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 import com.liskovsoft.mediaserviceinterfaces.oauth.Account;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.sharedutils.helpers.Helpers;
+import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.locale.LocaleUtility;
 import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.sharedutils.rx.RxHelper;
@@ -38,7 +39,10 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGrou
 import com.liskovsoft.smartyoutubetv2.common.app.views.BrowseView;
 import com.liskovsoft.smartyoutubetv2.common.misc.AppDataSourceManager;
 import com.liskovsoft.smartyoutubetv2.common.misc.BrowseProcessorManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.LocalMediaScanner;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadItem;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadManager;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager.AccountChangeListener;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AccountsData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.BlockedChannelData;
@@ -205,6 +209,8 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
                 new BrowseSection(MediaGroup.TYPE_BLOCKED_CHANNELS, getContext().getString(R.string.header_blocked_channels), BrowseSection.TYPE_GRID, R.drawable.icon_blocked_channels, false));
         mSectionsMapping.put(MediaGroup.TYPE_USER_PLAYLISTS, new BrowseSection(MediaGroup.TYPE_USER_PLAYLISTS, getContext().getString(R.string.header_playlists), BrowseSection.TYPE_ROW, R.drawable.icon_playlist, false));
         mSectionsMapping.put(MediaGroup.TYPE_NOTIFICATIONS, new BrowseSection(MediaGroup.TYPE_NOTIFICATIONS, getContext().getString(R.string.header_notifications), BrowseSection.TYPE_GRID, R.drawable.icon_notification, false));
+        mSectionsMapping.put(LocalMediaScanner.SECTION_ID, new BrowseSection(LocalMediaScanner.SECTION_ID, getContext().getString(R.string.header_local_media), BrowseSection.TYPE_GRID, R.drawable.icon_local_media, false));
+        mSectionsMapping.put(DownloadManager.SECTION_ID, new BrowseSection(DownloadManager.SECTION_ID, getContext().getString(R.string.header_downloads), BrowseSection.TYPE_GRID, R.drawable.icon_downloads, false));
         mSectionsMapping.put(MediaGroup.TYPE_PLAYBACK_QUEUE, new BrowseSection(MediaGroup.TYPE_PLAYBACK_QUEUE, getContext().getString(R.string.playback_queue_category_title), BrowseSection.TYPE_GRID, R.drawable.icon_queue, false));
 
         if (getSidebarService().isSettingsSectionEnabled()) {
@@ -269,6 +275,41 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
     private void initLocalGridMapping() {
         mLocalGridMappings.put(MediaGroup.TYPE_PLAYBACK_QUEUE, () -> Playlist.instance().getAllReversed());
         mLocalGridMappings.put(MediaGroup.TYPE_BLOCKED_CHANNELS, this::getBlockedChannels);
+        mLocalGridMappings.put(DownloadManager.SECTION_ID, () -> DownloadManager.instance(getContext()).getVideos());
+        DownloadManager.instance(getContext()).addListener(this::onDownloadsChanged);
+        mLocalGridMappings.put(LocalMediaScanner.SECTION_ID, this::getLocalMedia);
+        LocalMediaScanner.instance(getContext()).addListener(this::onLocalMediaChanged);
+    }
+
+    /**
+     * Keep the downloads section up to date while it is open
+     */
+    private void onDownloadsChanged(DownloadItem item) {
+        boolean listChanged = item == null || !item.isActive();
+
+        if (listChanged && getView() != null && getCurrentSection() != null && getCurrentSection().getId() == DownloadManager.SECTION_ID) {
+            Utils.removeCallbacks(mRefreshSection);
+            Utils.postDelayed(mRefreshSection, 500);
+        }
+    }
+
+    private List<Video> getLocalMedia() {
+        // NOTE: the context is the activity here: the system dialog needs one
+        if (LocalMediaScanner.requestPermissionIfNeeded(getContext())) {
+            MessageHelpers.showLongMessage(getContext(), R.string.local_media_grant_access);
+        }
+
+        return LocalMediaScanner.instance(getContext()).getVideos();
+    }
+
+    /**
+     * The scan is done in the background: show what is found
+     */
+    private void onLocalMediaChanged() {
+        if (getView() != null && getCurrentSection() != null && getCurrentSection().getId() == LocalMediaScanner.SECTION_ID) {
+            Utils.removeCallbacks(mRefreshSection);
+            Utils.postDelayed(mRefreshSection, 300);
+        }
     }
 
     private List<Video> getBlockedChannels() {

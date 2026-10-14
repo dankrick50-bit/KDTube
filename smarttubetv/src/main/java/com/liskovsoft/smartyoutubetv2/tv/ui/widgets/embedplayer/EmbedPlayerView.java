@@ -481,6 +481,11 @@ public class EmbedPlayerView extends PlayerView implements PlaybackView {
     }
 
     @Override
+    public void setSharpenLevel(int level) {
+        // Not for the small preview player
+    }
+
+    @Override
     public void setVideoFlipEnabled(boolean enabled) {
 
     }

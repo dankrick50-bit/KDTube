@@ -6,8 +6,12 @@ import androidx.annotation.Nullable;
 import com.google.android.exoplayer2.Renderer;
 import com.google.android.exoplayer2.audio.AudioCapabilities;
 import com.google.android.exoplayer2.audio.AudioProcessor;
+import com.liskovsoft.smartyoutubetv2.common.exoplayer.other.SoundEnhanceProcessor;
 import com.google.android.exoplayer2.audio.AudioRendererEventListener;
 import com.google.android.exoplayer2.audio.DefaultAudioSink;
+import com.google.android.exoplayer2.audio.MediaCodecAudioRenderer;
+import com.google.android.exoplayer2.ext.ffmpeg.FfmpegAudioRenderer;
+import com.google.android.exoplayer2.ext.ffmpeg.FfmpegLibrary;
 import com.google.android.exoplayer2.drm.DrmSessionManager;
 import com.google.android.exoplayer2.drm.FrameworkMediaCrypto;
 import com.google.android.exoplayer2.mediacodec.MediaCodecSelector;
@@ -117,6 +121,14 @@ public class CustomOverridesRenderersFactory extends CustomRenderersFactoryBase 
     //    replaceVideoRenderer(out, videoRenderer);
     //}
 
+    /**
+     * The sound options of the player (levelling, dialogue boost, wide stereo)
+     */
+    @Override
+    protected AudioProcessor[] buildAudioProcessors() {
+        return new AudioProcessor[] {new SoundEnhanceProcessor()};
+    }
+
     // 2.10, 2.11
     @Override
     protected void buildAudioRenderers(Context context, @ExtensionRendererMode int extensionRendererMode, MediaCodecSelector mediaCodecSelector,
@@ -129,6 +141,8 @@ public class CustomOverridesRenderersFactory extends CustomRenderersFactoryBase 
         if ((mPlayerData.getAudioDelayMs() == 0 || !mPlayerData.isAudioDelayEnabled()) && !mPlayerTweaksData.isAudioSyncFixEnabled()) {
             // Improve performance a bit by eliminating calculations presented in custom renderer.
 
+            addSoftwareAudioDecoder(out, eventHandler, eventListener);
+
             return;
         }
 
@@ -140,6 +154,36 @@ public class CustomOverridesRenderersFactory extends CustomRenderersFactoryBase 
         audioRenderer.enableAudioSyncFix(mPlayerTweaksData.isAudioSyncFixEnabled());
 
         replaceAudioRenderer(out, audioRenderer);
+
+        addSoftwareAudioDecoder(out, eventHandler, eventListener);
+    }
+
+    /**
+     * Dolby Digital (Plus), Dolby TrueHD, DTS (HD) on the devices that can't decode them: the FFmpeg decoder
+     * steps in. Both renderers are put behind one: see {@link FallbackAudioRenderer}.
+     */
+    private void addSoftwareAudioDecoder(ArrayList<Renderer> out, Handler eventHandler, AudioRendererEventListener eventListener) {
+        Renderer main = null;
+
+        // The extension adds itself as one more renderer: take it out
+        for (int i = out.size() - 1; i >= 0; i--) {
+            Renderer renderer = out.get(i);
+
+            if (renderer instanceof FfmpegAudioRenderer) {
+                out.remove(i);
+            } else if (renderer instanceof MediaCodecAudioRenderer) {
+                main = renderer;
+            }
+        }
+
+        if (main == null || !FfmpegLibrary.isAvailable()) {
+            return;
+        }
+
+        // NOTE: its own set of the sound options: the two outputs don't share state
+        Renderer software = new FfmpegAudioRenderer(eventHandler, eventListener, buildAudioProcessors());
+
+        out.set(out.indexOf(main), new FallbackAudioRenderer(main, software));
     }
 
     // 2.10, 2.11

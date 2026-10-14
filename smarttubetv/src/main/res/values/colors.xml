@@ -68,4 +68,12 @@
     <color name="lb_speech_orb_not_recording">@color/orb_color</color>
     <color name="lb_speech_orb_not_recording_pulsed">@color/orb_bright_color</color>
     <color name="lb_speech_orb_not_recording_icon">@color/orb_icon_color</color>
+    <!-- Color scheme: Modern -->
+    <color name="scheme_modern_background">#0F1419</color>
+    <color name="scheme_modern_surface">#19202A</color>
+    <color name="scheme_modern_card_selected">#2A3547</color>
+    <color name="scheme_modern_text">#FFFFFF</color>
+    <color name="scheme_modern_text_secondary">#B8C1CE</color>
+    <color name="scheme_modern_accent">#4C8DFF</color>
+    <color name="scheme_modern_accent_light">#9DC0FF</color>
 </resources>

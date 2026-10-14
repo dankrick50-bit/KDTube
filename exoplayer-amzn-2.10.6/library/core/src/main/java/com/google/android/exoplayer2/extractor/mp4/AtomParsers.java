@@ -897,8 +897,9 @@ import java.util.List;
         out.nalUnitLengthFieldLength = hevcConfig.nalUnitLengthFieldLength;
       } else if (childAtomType == Atom.TYPE_dvcC || childAtomType == Atom.TYPE_dvvC) {
         DolbyVisionConfig dolbyVisionConfig = DolbyVisionConfig.parse(parent);
-        // TODO: Support profiles 4, 8 and 9 once we have a way to fall back to AVC/HEVC decoding.
-        if (dolbyVisionConfig != null && dolbyVisionConfig.profile == 5) {
+        // MOD: all the profiles. The ones with a compatible layer fall back to the AVC/HEVC decoders
+        // (MediaCodecVideoRenderer.getDecoderInfos).
+        if (dolbyVisionConfig != null) {
           codecs = dolbyVisionConfig.codecs;
           mimeType = MimeTypes.VIDEO_DOLBY_VISION;
         }

@@ -210,6 +210,8 @@ public class PlayerSettingsPresenter extends BasePresenter<Void> {
                 {R.string.content_block_provider, PlayerTweaksData.PLAYER_BUTTON_CONTENT_BLOCK},
                 {R.string.seek_interval, PlayerTweaksData.PLAYER_BUTTON_SEEK_INTERVAL},
                 {R.string.share_link, PlayerTweaksData.PLAYER_BUTTON_SHARE},
+                {R.string.download_video, PlayerTweaksData.PLAYER_BUTTON_DOWNLOAD},
+                {R.string.cast_to_device, PlayerTweaksData.PLAYER_BUTTON_CAST},
                 {R.string.action_video_info, PlayerTweaksData.PLAYER_BUTTON_VIDEO_INFO},
                 {R.string.action_debug_info, PlayerTweaksData.PLAYER_BUTTON_VIDEO_STATS},
                 {R.string.action_playback_queue, PlayerTweaksData.PLAYER_BUTTON_PLAYBACK_QUEUE},

@@ -42,6 +42,7 @@ public class SurfacePlaybackFragment extends PlaybackSupportFragment {
         mVideoSurfaceWrapper = (PlayerTweaksData.instance(getContext()).isTextureViewEnabled() ||
                 PlayerData.instance(getContext()).getRotationAngle() != 0) ?
                 new TextureViewWrapper(getContext(), root) : new SurfaceViewWrapper(getContext(), root);
+        // NOTE: the sharpening surface is switched on later, when the format of the video is known (see setSharpen)
         mVideoSurfaceRoot = root.findViewById(com.liskovsoft.smartyoutubetv2.tv.R.id.surface_root);
         mVideoSurfaceRoot.addView(mVideoSurfaceWrapper.getSurfaceView(), 0);
         mVideoSurfaceRoot.setAspectRatioListener((targetAspectRatio, naturalAspectRatio, aspectRatioMismatch) -> scaleIfNeeded());
@@ -117,6 +118,31 @@ public class SurfacePlaybackFragment extends PlaybackSupportFragment {
 
             ((PlayerEngine) this).restartEngine();
         }
+    }
+
+    /**
+     * @param level one of PlayerTweaksData.SHARPEN_*
+     */
+    protected void setSharpen(int level) {
+        SharpenSurfaceWrapper.setStrength(level == PlayerTweaksData.SHARPEN_STRONG ?
+                SharpenSurfaceWrapper.STRENGTH_STRONG : SharpenSurfaceWrapper.STRENGTH_LIGHT);
+
+        // The texture view is there for the rotated or flipped picture: it has the priority
+        if (mVideoSurfaceWrapper == null || mVideoSurfaceWrapper instanceof TextureViewWrapper || getView() == null) {
+            return;
+        }
+
+        boolean enable = level != PlayerTweaksData.SHARPEN_OFF;
+
+        if (enable == (mVideoSurfaceWrapper instanceof SharpenSurfaceWrapper)) {
+            return;
+        }
+
+        mVideoSurfaceRoot.removeView(mVideoSurfaceWrapper.getSurfaceView());
+        mVideoSurfaceWrapper = enable ? new SharpenSurfaceWrapper(getContext()) : new SurfaceViewWrapper(getContext(), (ViewGroup) getView());
+        mVideoSurfaceRoot.addView(mVideoSurfaceWrapper.getSurfaceView(), 0);
+
+        ((PlayerEngine) this).restartEngine();
     }
 
     protected void setFlipEnabled(boolean enabled) {
