@@ -121,7 +121,7 @@ cat > "$WORK/BuildInfo.cs" <<EOF
 internal static class BuildInfo
 {
     public const string Version = "$VERSION";
-    public const string AssemblyVersion = "$VERSION.0.0";
+    public const string AssemblyVersion = "$(printf "%s.0.0.0" "$VERSION" | cut -d. -f1-4)";
 }
 EOF
 
