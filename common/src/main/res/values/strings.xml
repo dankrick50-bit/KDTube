@@ -802,6 +802,9 @@
     <string name="sharpen_light">Light</string>
     <string name="sharpen_strong">Strong</string>
     <string name="volume_levelling">Volume levelling</string>
+    <string name="bass_boost">Bass boost</string>
+    <string name="bass_light">Light (warmer, for TV speakers)</string>
+    <string name="bass_strong">Strong (for songs and music videos)</string>
     <string name="levelling_night">Night (for low volume)</string>
     <string name="sound_options">Sound</string>
     <string name="dialogue_boost">Dialogue boost</string>

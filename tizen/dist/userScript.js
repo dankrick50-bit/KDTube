@@ -1,4 +1,4 @@
-// KDTube 32.67.1 for Samsung TVs (TizenBrew module). Built by packaging/tizen/build-tizen.js: don't edit, edit the sources.
+// KDTube 32.67.2 for Samsung TVs (TizenBrew module). Built by packaging/tizen/build-tizen.js: don't edit, edit the sources.
 ;
 // KDTube for Samsung TVs (Tizen). A TizenBrew module: TizenBrew opens YouTube's TV page and runs this file
 // in it before the page's own scripts. This part gives the page scripts of KDTube (desktop/app/inject/tube.js,

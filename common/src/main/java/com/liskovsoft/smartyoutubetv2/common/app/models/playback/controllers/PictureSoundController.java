@@ -50,6 +50,7 @@ public class PictureSoundController extends BasePlayerController {
         List<OptionItem> options = new ArrayList<>();
         options.add(UiOptionItem.from(getContext().getString(R.string.sharpen), optionItem -> showSharpenDialog()));
         options.add(UiOptionItem.from(getContext().getString(R.string.volume_levelling), optionItem -> showLevellingDialog()));
+        options.add(UiOptionItem.from(getContext().getString(R.string.bass_boost), optionItem -> showBassDialog()));
         options.add(UiOptionItem.from(getContext().getString(R.string.virtual_surround), optionItem -> showSurroundDialog()));
         options.add(UiOptionItem.from(getContext().getString(R.string.sound_options), optionItem -> showSoundDialog()));
 
@@ -93,6 +94,25 @@ public class PictureSoundController extends BasePlayerController {
         AppDialogPresenter dialog = AppDialogPresenter.instance(getContext());
         dialog.appendRadioCategory(getContext().getString(R.string.volume_levelling), options);
         dialog.showDialog(getContext().getString(R.string.volume_levelling));
+    }
+
+    private void showBassDialog() {
+        PlayerTweaksData data = getPlayerTweaksData();
+        List<OptionItem> options = new ArrayList<>();
+
+        for (int[] pair : new int[][] {
+                {R.string.option_off, SoundEnhanceProcessor.BASS_OFF},
+                {R.string.bass_light, SoundEnhanceProcessor.BASS_LIGHT},
+                {R.string.bass_strong, SoundEnhanceProcessor.BASS_STRONG}}) {
+            options.add(UiOptionItem.from(getContext().getString(pair[0]), optionItem -> {
+                data.setBassBoost(pair[1]);
+                applySound();
+            }, data.getBassBoost() == pair[1]));
+        }
+
+        AppDialogPresenter dialog = AppDialogPresenter.instance(getContext());
+        dialog.appendRadioCategory(getContext().getString(R.string.bass_boost), options);
+        dialog.showDialog(getContext().getString(R.string.bass_boost));
     }
 
     private void showSoundDialog() {
@@ -152,7 +172,8 @@ public class PictureSoundController extends BasePlayerController {
     private void applySound() {
         PlayerTweaksData data = getPlayerTweaksData();
         SoundEnhanceProcessor.setOptions(
-                data.getSoundLevelling(), data.isDialogueBoostEnabled(), data.isWideStereoEnabled(), isVirtualSurroundNeeded());
+                data.getSoundLevelling(), data.isDialogueBoostEnabled(), data.isWideStereoEnabled(), isVirtualSurroundNeeded(),
+                data.getBassBoost());
     }
 
     private void applySharpen() {

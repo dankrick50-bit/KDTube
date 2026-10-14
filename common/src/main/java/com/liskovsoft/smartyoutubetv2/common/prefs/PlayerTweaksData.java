@@ -86,6 +86,7 @@ public class PlayerTweaksData implements ProfileChangeListener {
     private int mSoundLevelling;
     private boolean mIsDialogueBoostEnabled;
     private boolean mIsWideStereoEnabled;
+    private int mBassBoost;
     private boolean mIsVirtualSurroundEnabled;
     private int mVirtualSurroundMode;
     private boolean mIsAltPresetsEnabled;
@@ -603,6 +604,18 @@ public class PlayerTweaksData implements ProfileChangeListener {
         persistData();
     }
 
+    /**
+     * One of SoundEnhanceProcessor.BASS_*
+     */
+    public int getBassBoost() {
+        return mBassBoost;
+    }
+
+    public void setBassBoost(int level) {
+        mBassBoost = level;
+        persistData();
+    }
+
     public boolean isWideStereoEnabled() {
         return mIsWideStereoEnabled;
     }
@@ -844,6 +857,7 @@ public class PlayerTweaksData implements ProfileChangeListener {
         mIsWideStereoEnabled = Helpers.parseBoolean(split, 65, false);
         mIsVirtualSurroundEnabled = Helpers.parseBoolean(split, 66, false);
         mVirtualSurroundMode = Helpers.parseInt(split, 67, mIsVirtualSurroundEnabled ? VIRTUAL_SURROUND_ON : VIRTUAL_SURROUND_AUTO);
+        mBassBoost = Helpers.parseInt(split, 68, 0);
 
         // The buttons are newer than the stored set: show them once, the user may hide them afterwards
         if (!mIsDownloadCastButtonsAdded) {
@@ -879,7 +893,7 @@ public class PlayerTweaksData implements ProfileChangeListener {
                 null, mIsAudioFocusEnabled, mIsDontResizeVideoToFitDialogEnabled, mIsSuggestionsHorizontallyScrolled,
                 mIsQuickSkipShortsAltEnabled, mIsQuickSkipVideosAltEnabled, mIsAudioTimeStretchingEnabled, mIsQueueRespectsPlaybackMode,
                 mIsDownloadCastButtonsAdded, mSharpenLevel, mSoundLevelling, mIsDialogueBoostEnabled, mIsWideStereoEnabled,
-                mIsVirtualSurroundEnabled, mVirtualSurroundMode
+                mIsVirtualSurroundEnabled, mVirtualSurroundMode, mBassBoost
                 ));
     }
 

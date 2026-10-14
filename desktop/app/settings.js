@@ -15,6 +15,7 @@ const DEFAULTS = {
   levelling: "off", // off | on | night
   dialogue: false,
   wide: false,
+  bass: "off", // off | light | strong
   // System
   hardwareAcceleration: true,
   startFullscreen: false,
@@ -68,8 +69,8 @@ function set(key, value) {
 
 /** The part a page needs: no paths of the computer in it. */
 function forPage() {
-  const { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, touchScroll } = values;
-  return { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, touchScroll };
+  const { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, bass, touchScroll } = values;
+  return { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, bass, touchScroll };
 }
 
 module.exports = { DEFAULTS, load, save, get, set, forPage };

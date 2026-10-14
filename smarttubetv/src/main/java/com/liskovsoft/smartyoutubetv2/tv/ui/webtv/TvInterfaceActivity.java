@@ -309,6 +309,8 @@ public class TvInterfaceActivity extends Activity {
             settings.put("levelling", levelling == SoundEnhanceProcessor.LEVELLING_NIGHT ? "night" : levelling == SoundEnhanceProcessor.LEVELLING_ON ? "on" : "off");
             settings.put("dialogue", tweaks.isDialogueBoostEnabled());
             settings.put("wide", tweaks.isWideStereoEnabled());
+            int bass = tweaks.getBassBoost();
+            settings.put("bass", bass == SoundEnhanceProcessor.BASS_STRONG ? "strong" : bass == SoundEnhanceProcessor.BASS_LIGHT ? "light" : "off");
             // The page offers the resolutions that fit the screen: it's told the real one (4K, 8K), not
             // the 1080p the interface of a TV box is drawn in
             Point display = getDisplayPixels();

@@ -26,6 +26,18 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
     public static final int LEVELLING_OFF = 0;
     public static final int LEVELLING_ON = 1;
     public static final int LEVELLING_NIGHT = 2;
+    public static final int BASS_OFF = 0;
+    public static final int BASS_LIGHT = 1;
+    public static final int BASS_STRONG = 2;
+    /**
+     * Bass boost: a shelf under the kick drum and the bass line (below the voices: they stay clear), and nothing
+     * below what speakers play: the energy under 25 Hz would only make small speakers distort. What it lifts is
+     * taken back in the level first (a third of it: the sound shouldn't get weaker), and a limiter keeps the loudest moments clean.
+     */
+    private static final float BASS_HZ = 90;
+    private static final float BASS_LIGHT_DB = 4;
+    private static final float BASS_STRONG_DB = 7;
+    private static final float SUBSONIC_HZ = 25;
     private static final float SPEECH_HZ = 2_600;
     private static final float SPEECH_Q = 0.8f;
     private static final float SPEECH_LIFT_DB = 6;
@@ -61,6 +73,7 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
     private static volatile boolean sIsDialogueBoostEnabled;
     private static volatile boolean sIsWideStereoEnabled;
     private static volatile boolean sIsVirtualSurroundEnabled;
+    private static volatile int sBassBoost = BASS_OFF;
     /**
      * Changes on every change of the options (they are set from another thread)
      */
@@ -69,6 +82,12 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
     private int mLevelling;
     private boolean mDialogue;
     private boolean mWide;
+    private int mBass;
+    private float mBassTrim = 1;
+    private final float[] mBassShelf = new float[5];
+    private final float[] mSubsonic = new float[5];
+    private float[] mBassState = new float[0];
+    private float[] mSubsonicState = new float[0];
     // The compressor
     private float mThresholdDb;
     private float mKneeDb;
@@ -90,6 +109,14 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
     private int mRearPos;
 
     public static void setOptions(int levelling, boolean dialogueBoost, boolean wideStereo, boolean virtualSurround) {
+        setOptions(levelling, dialogueBoost, wideStereo, virtualSurround, sBassBoost);
+    }
+
+    /**
+     * @param bassBoost one of BASS_*
+     */
+    public static void setOptions(int levelling, boolean dialogueBoost, boolean wideStereo, boolean virtualSurround, int bassBoost) {
+        sBassBoost = bassBoost;
         sLevelling = levelling;
         sIsDialogueBoostEnabled = dialogueBoost;
         sIsWideStereoEnabled = wideStereo;
@@ -137,7 +164,7 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
 
         ByteBuffer output = replaceOutputBuffer(size);
 
-        if (mLevelling == LEVELLING_OFF && !mDialogue && !mWide && !mDownmix) {
+        if (mLevelling == LEVELLING_OFF && !mDialogue && !mWide && !mDownmix && mBass == BASS_OFF) {
             output.put(inputBuffer);
             output.flip();
             return;
@@ -148,8 +175,11 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
         int frames = size / (2 * inputChannels);
         float[] frame = mFrame;
         boolean wide = mWide && inputChannels == 2;
-        boolean compress = mLevelling != LEVELLING_OFF;
-        float trim = (mDialogue && !compress ? DIALOGUE_TRIM : 1) * (wide && !compress ? WIDE_TRIM : 1);
+        boolean bass = mBass != BASS_OFF;
+        // Volume levelling compresses; the bass boost alone gets a limiter (the same machinery, other numbers)
+        boolean compress = mLevelling != LEVELLING_OFF || bass;
+        boolean levelling = mLevelling != LEVELLING_OFF;
+        float trim = (mDialogue && !levelling ? DIALOGUE_TRIM : 1) * (wide && !levelling ? WIDE_TRIM : 1) * (bass ? mBassTrim : 1);
 
         for (int i = 0; i < frames; i++) {
             float peak = 0;
@@ -175,7 +205,14 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
                 frame[1] = mid - side;
             }
 
-            float gain = trim;
+            if (bass) {
+                for (int c = 0; c < channels; c++) {
+                    frame[c] = filter(mSubsonic, mSubsonicState, c, filter(mBassShelf, mBassState, c, frame[c] * trim));
+                }
+            }
+
+            // NOTE: with the bass boost the trim is applied before the filters (headroom for the lift)
+            float gain = bass ? 1 : trim;
 
             if (compress) {
                 // One gain for all the channels: the picture of the sound stays where it is
@@ -273,6 +310,8 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
         mReductionDb = 0;
         java.util.Arrays.fill(mSpeechState, 0);
         java.util.Arrays.fill(mRumbleState, 0);
+        java.util.Arrays.fill(mBassState, 0);
+        java.util.Arrays.fill(mSubsonicState, 0);
         java.util.Arrays.fill(mRearLeft, 0);
         java.util.Arrays.fill(mRearRight, 0);
     }
@@ -282,6 +321,7 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
         mLevelling = sLevelling;
         mDialogue = sIsDialogueBoostEnabled;
         mWide = sIsWideStereoEnabled;
+        mBass = sBassBoost;
 
         int channels = Math.max(channelCount, 1);
         float sampleRate = Math.max(sampleRateHz, 8_000);
@@ -290,6 +330,8 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
             mFrame = new float[channels];
             mSpeechState = new float[channels * 2];
             mRumbleState = new float[channels * 2];
+            mBassState = new float[channels * 2];
+            mSubsonicState = new float[channels * 2];
         }
 
         int rearDelay = mDownmix ? Math.round(REAR_DELAY_SEC * sampleRate) : 0;
@@ -302,9 +344,19 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
 
         if (mLevelling == LEVELLING_NIGHT) {
             setCompressor(-42, 12, 12, 0.003f, 0.3f, sampleRate);
-        } else {
+        } else if (mLevelling == LEVELLING_ON) {
             setCompressor(-24, 20, 4, 0.01f, 0.25f, sampleRate);
+        } else {
+            // A limiter for the bass boost: only the peaks that would clip are touched
+            setCompressor(-1.5f, 3, 20, 0.001f, 0.12f, sampleRate);
+            mMakeupDb = 0;
         }
+
+        float bassDb = mBass == BASS_STRONG ? BASS_STRONG_DB : BASS_LIGHT_DB;
+        setLowShelf(mBassShelf, BASS_HZ, bassDb, sampleRate);
+        setHighPass(mSubsonic, SUBSONIC_HZ, 0.7071f, sampleRate);
+        // A third of the lift is taken back from the whole: the mix stays about as loud, the limiter has little to do
+        mBassTrim = (float) Math.exp(-bassDb / 3 * LN10_DIV_20);
 
         setPeaking(mSpeech, SPEECH_HZ, SPEECH_Q, SPEECH_LIFT_DB, sampleRate);
         setLowShelf(mRumble, RUMBLE_HZ, RUMBLE_CUT_DB, sampleRate);
@@ -377,6 +429,13 @@ public class SoundEnhanceProcessor extends BaseAudioProcessor {
                 (a + 1) + (a - 1) * cos + beta,
                 -2 * ((a - 1) + (a + 1) * cos),
                 (a + 1) + (a - 1) * cos - beta);
+    }
+
+    private static void setHighPass(float[] coeffs, float frequency, float q, float sampleRate) {
+        double w0 = 2 * Math.PI * frequency / sampleRate;
+        double alpha = Math.sin(w0) / (2 * q);
+        double cos = Math.cos(w0);
+        set(coeffs, (1 + cos) / 2, -(1 + cos), (1 + cos) / 2, 1 + alpha, -2 * cos, 1 - alpha);
     }
 
     private static void set(float[] coeffs, double b0, double b1, double b2, double a0, double a1, double a2) {
