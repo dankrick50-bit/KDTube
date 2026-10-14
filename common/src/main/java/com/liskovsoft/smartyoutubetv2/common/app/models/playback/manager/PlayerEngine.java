@@ -1,5 +1,7 @@
 package com.liskovsoft.smartyoutubetv2.common.app.models.playback.manager;
 
+import com.google.android.exoplayer2.Format;
+import com.google.android.exoplayer2.decoder.DecoderCounters;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.FormatItem;
 
@@ -53,4 +55,18 @@ public interface PlayerEngine extends PlayerConstants {
      */
     void setSharpenLevel(int level);
     void setVideoGravity(int gravity);
+
+    /**
+     * @return the counters of the video decoder (frames shown, frames dropped), null if nothing plays
+     */
+    default DecoderCounters getVideoDecoderCounters() {
+        return null;
+    }
+
+    /**
+     * @return the video stream that plays now (not the preset): null if none
+     */
+    default Format getPlayingVideoFormat() {
+        return null;
+    }
 }

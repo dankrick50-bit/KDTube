@@ -159,6 +159,7 @@ async function buildWindows(args, version) {
     "/r:System.IO.Compression.dll", "/r:System.IO.Compression.FileSystem.dll",
     path.join(ROOT, "packaging", "windows", "KDTubeDesktopSetup.cs"), versionFile], { stdio: "inherit" });
   console.log("   " + path.relative(ROOT, setup) + "  " + Math.round(fs.statSync(setup).size / 1048576) + " MB");
+  return setup;
 }
 
 // ---------- Linux ----------
@@ -305,6 +306,39 @@ async function buildLinux(args, version) {
   const packed = zlib.gzipSync(archive.tar(portable, mtime), { level: 6 });
   fs.writeFileSync(tarFile, packed);
   console.log("   " + path.relative(ROOT, tarFile) + "  " + Math.round(packed.length / 1048576) + " MB");
+  return debFile;
+}
+
+// ---------- the update channel ----------
+
+// Where the installed PC apps look (desktop/app/updater.js): the release "latest", next to the Android files.
+// packaging/publish-update.js sends the files of <out>/Updates there.
+const UPDATE_BASE = "https://github.com/dankrick50-bit/KDTube/releases/download/latest/";
+const UPDATE_NAMES = { windows: "kdtube-pc-windows-x64-setup.exe", deb: "kdtube-pc-ubuntu-amd64.deb" };
+
+function writeUpdateFiles(args, version, built) {
+  const dir = path.join(args.out, "Updates");
+  fs.mkdirSync(dir, { recursive: true });
+  const infoFile = path.join(dir, "kdtube-pc.json");
+  // A build of one system keeps what the other one has there
+  let info = {};
+  try {
+    info = JSON.parse(fs.readFileSync(infoFile, "utf8"));
+  } catch (e) {
+    // the first one
+  }
+  if (info.version !== version) info = {};
+  info.version = version;
+  // What the update question shows. KDTUBE_CHANGELOG="first line|second line" (the same as for Android)
+  info.changelog = (process.env.KDTUBE_CHANGELOG || "KDTube " + args.display).split("|").map((line) => line.trim()).filter(Boolean);
+  for (const kind of Object.keys(UPDATE_NAMES)) {
+    if (!built[kind]) continue;
+    const target = path.join(dir, UPDATE_NAMES[kind]);
+    fs.copyFileSync(built[kind], target);
+    info[kind] = { url: UPDATE_BASE + UPDATE_NAMES[kind], sha256: sha256(target), size: fs.statSync(target).size };
+  }
+  fs.writeFileSync(infoFile, JSON.stringify(info, null, 2) + "\n");
+  console.log("   " + path.relative(ROOT, infoFile) + ": " + Object.keys(UPDATE_NAMES).filter((kind) => info[kind]).join(", "));
 }
 
 async function main() {
@@ -313,8 +347,10 @@ async function main() {
   // The version as it's shown and written in the names of the files: the one of the Android app
   args.display = version.replace(/\.0$/, "");
   console.log("KDTube for the PC " + version + " (Electron " + ELECTRON_VERSION + ")");
-  if (args.only !== "linux") await buildWindows(args, version);
-  if (args.only !== "windows") await buildLinux(args, version);
+  const built = {};
+  if (args.only !== "linux") built.windows = await buildWindows(args, version);
+  if (args.only !== "windows") built.deb = await buildLinux(args, version);
+  writeUpdateFiles(args, version, built);
 }
 
 main().catch((error) => {

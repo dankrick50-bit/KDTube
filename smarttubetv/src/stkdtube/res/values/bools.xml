@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- KDTube: an update found at launch is offered right away, with what's new and an install button -->
+    <bool name="update_prompt_at_launch">true</bool>
+</resources>

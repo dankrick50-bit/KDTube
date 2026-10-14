@@ -14,6 +14,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.Com
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.ErrorFixerController;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.SponsorBlockController;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.HQDialogController;
+import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.FrameDropWatchdog;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.PictureSoundController;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.PlayerUIController;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.RemoteController;
@@ -66,6 +67,7 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
         mEventListeners.add(new AutoFrameRateController());
         mEventListeners.add(new HQDialogController());
         mEventListeners.add(new PictureSoundController());
+        mEventListeners.add(new FrameDropWatchdog());
         mEventListeners.add(new ChatController());
         mEventListeners.add(new CommentsController());
     }

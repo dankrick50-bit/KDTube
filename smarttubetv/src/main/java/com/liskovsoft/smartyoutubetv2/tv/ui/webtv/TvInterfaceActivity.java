@@ -5,14 +5,19 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.media.MediaCodecInfo;
+import android.media.MediaCodecInfo.VideoCapabilities;
 import android.media.MediaCodecList;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,9 +32,13 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
+import com.liskovsoft.sharedutils.helpers.DeviceHelpers;
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplayHolder.Mode;
+import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.UhdHelper;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.other.SoundEnhanceProcessor;
 import com.liskovsoft.smartyoutubetv2.common.misc.MemoryKeeper;
 import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
@@ -72,10 +81,16 @@ public class TvInterfaceActivity extends Activity {
      */
     private static final int MIN_ENGINE_VERSION = 80;
     private static final Pattern ENGINE_VERSION = Pattern.compile("Chrome/(\\d+)");
+    /**
+     * Back held this long opens the menu (the way back to the interface of the app)
+     */
+    private static final long BACK_HOLD_MS = 700;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private WebView mWebView;
     private String mScript;
     private boolean mIsPlaying;
+    private boolean mIsBackHeld;
+    private AlertDialog mMenu;
 
     public static void start(Context context) {
         Intent intent = new Intent(context, TvInterfaceActivity.class);
@@ -123,6 +138,7 @@ public class TvInterfaceActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         root.addView(mWebView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        addMenuButton(root);
         setContentView(root);
         hideSystemBars();
 
@@ -155,20 +171,82 @@ public class TvInterfaceActivity extends Activity {
         mWebView.loadUrl(TV_URL);
     }
 
-    private float getDensity() {
+    /**
+     * A screen to touch has no remote to hold Back on: a small button in the corner opens the menu
+     */
+    private void addMenuButton(FrameLayout root) {
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) {
+            return;
+        }
+
+        TextView button = new TextView(this);
+        button.setText("⋮"); // vertical ellipsis
+        button.setTextColor(Color.WHITE);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+        button.setGravity(Gravity.CENTER);
+        button.setBackgroundColor(0x66000000);
+        button.setContentDescription(getString(R.string.tv_interface_menu_title));
+        // Not in the way of the remote: the focus stays with the page
+        button.setFocusable(false);
+        button.setOnClickListener(view -> showMenu());
+
+        int size = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40, getResources().getDisplayMetrics());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(size, size, Gravity.TOP | Gravity.END);
+        root.addView(button, params);
+    }
+
+    private DisplayMetrics getRealMetrics() {
         DisplayMetrics metrics = new DisplayMetrics();
         // NOTE: of the display, not of the resources: the app scales those for its own interface
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        return metrics.density > 0 ? metrics.density : 1;
+        return metrics;
     }
 
     /**
-     * The longer side: the screen is used in landscape
+     * The biggest picture the screen can show, in its own pixels, landscape.<br/>
+     * NOTE: not the size of the interface. TV boxes (Google TV, Fire TV) draw their interface at 1920 x 1080
+     * on a 4K screen, and a page that measures that is never offered more than 1080p. The modes of the
+     * display say what the screen really is (also on Fire OS, see UhdHelper).
      */
-    private int getScreenWidth() {
-        DisplayMetrics metrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        return Math.max(metrics.widthPixels, metrics.heightPixels);
+    private Point getDisplayPixels() {
+        DisplayMetrics metrics = getRealMetrics();
+        int width = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int height = Math.min(metrics.widthPixels, metrics.heightPixels);
+
+        try {
+            Mode[] modes = new UhdHelper(this).getSupportedModes();
+
+            if (modes != null) {
+                for (Mode mode : modes) {
+                    if (mode == null) {
+                        continue;
+                    }
+
+                    int modeWidth = Math.max(mode.getPhysicalWidth(), mode.getPhysicalHeight());
+                    int modeHeight = Math.min(mode.getPhysicalWidth(), mode.getPhysicalHeight());
+
+                    if ((long) modeWidth * modeHeight > (long) width * height) {
+                        width = modeWidth;
+                        height = modeHeight;
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            // the modes can't be read: the size of the interface
+        }
+
+        return new Point(width, height);
+    }
+
+    /**
+     * The page scripts make the page see a screen of {@code screenWidth} pixels: what the page reads as the
+     * size of the screen times this. The engine gives that size in its own units (pixels / density).
+     */
+    private float getDisplayScale(int screenWidth) {
+        DisplayMetrics metrics = getRealMetrics();
+        float density = metrics.density > 0 ? metrics.density : 1;
+        float units = Math.max(metrics.widthPixels, metrics.heightPixels) / density;
+        return units > 0 ? screenWidth / units : density;
     }
 
     private static int getEngineVersion(String userAgent) {
@@ -229,8 +307,14 @@ public class TvInterfaceActivity extends Activity {
             settings.put("levelling", levelling == SoundEnhanceProcessor.LEVELLING_NIGHT ? "night" : levelling == SoundEnhanceProcessor.LEVELLING_ON ? "on" : "off");
             settings.put("dialogue", tweaks.isDialogueBoostEnabled());
             settings.put("wide", tweaks.isWideStereoEnabled());
-            settings.put("displayScale", getDensity());
-            settings.put("viewportWidth", getScreenWidth());
+            // The page offers the resolutions that fit the screen: it's told the real one (4K, 8K), not
+            // the 1080p the interface of a TV box is drawn in
+            Point display = getDisplayPixels();
+            settings.put("displayScale", getDisplayScale(display.x));
+            settings.put("viewportWidth", display.x);
+            // And no more than the chip decodes, per kind of video
+            settings.put("codecLimits", getHardwareCodecLimits());
+            settings.put("touchScroll", true);
             // Protected video: "no", although Android has the module for it. A device that says yes is
             // given the protected copy of ordinary videos too, and that one is limited to 720p here
             // (seen on a Fire HD 10: the same song, 1080p unprotected, 720p protected).
@@ -263,6 +347,89 @@ public class TvInterfaceActivity extends Activity {
         }
 
         return result;
+    }
+
+    /**
+     * The biggest picture the chip decodes, per kind of video: {"vp09": [3840, 2160], ...}. The page asks
+     * "can you play VP9 at 3840 x 2160?" and the web engine looks at the codec only: 8K would be accepted on
+     * a chip that stops at 4K, and 4K on one that stops at 1080p. Kinds without a hardware decoder are left
+     * out (see getSoftwareOnlyCodecs).
+     */
+    private static JSONObject getHardwareCodecLimits() {
+        JSONObject result = new JSONObject();
+        String[][] kinds = {{"video/x-vnd.on2.vp9", "vp09", "vp9"}, {"video/av01", "av01"}, {"video/avc", "avc1"}};
+
+        for (String[] kind : kinds) {
+            int[] size = getHardwareMaxSize(kind[0]);
+
+            if (size == null) {
+                continue;
+            }
+
+            for (int i = 1; i < kind.length; i++) {
+                try {
+                    result.put(kind[i], new JSONArray().put(size[0]).put(size[1]));
+                } catch (JSONException e) {
+                    // can't happen with these keys
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static final int[][] VIDEO_SIZES = {{7680, 4320}, {5120, 2880}, {3840, 2160}, {2560, 1440}, {1920, 1080}, {1280, 720}};
+
+    /**
+     * @return the largest of the usual sizes (8K .. 720p) a hardware decoder of the kind takes, null if unknown
+     */
+    private static int[] getHardwareMaxSize(String mimeType) {
+        int[] best = null;
+
+        try {
+            for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
+                if (info.isEncoder() || !isHardware(info) || !supportsType(info, mimeType)) {
+                    continue;
+                }
+
+                VideoCapabilities capabilities = info.getCapabilitiesForType(mimeType).getVideoCapabilities();
+
+                if (capabilities == null) {
+                    continue;
+                }
+
+                for (int[] size : VIDEO_SIZES) {
+                    if (isKnownSize(mimeType, size) && capabilities.isSizeSupported(size[0], size[1])) {
+                        if (best == null || size[1] > best[1]) {
+                            best = size;
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            // the list of the codecs can't be read: no limit
+            return null;
+        }
+
+        return best;
+    }
+
+    private static boolean supportsType(MediaCodecInfo info, String mimeType) {
+        for (String type : info.getSupportedTypes()) {
+            if (type.equalsIgnoreCase(mimeType)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Some TV sticks report the size of the screen for VP9, not the one of the decoder (DeviceHelpers knows them)
+     */
+    private static boolean isKnownSize(String mimeType, int[] size) {
+        return !"video/x-vnd.on2.vp9".equals(mimeType) || DeviceHelpers.isVP9ResolutionSupported(size[1]);
     }
 
     private static boolean hasHardwareDecoder(String mimeType) {
@@ -357,10 +524,21 @@ public class TvInterfaceActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         int keyCode = event.getKeyCode();
 
-        // The "back" of the page is the Esc key (it closes its dialogs, leaves a video, and asks before exit)
+        // The "back" of the page is the Esc key (it closes its dialogs, leaves a video, and asks before exit).
+        // Held down, it opens the menu of KDTube: most remotes (Google TV, ONN) have no menu key.
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.getAction() == KeyEvent.ACTION_UP) {
-                sendKey(KeyEvent.KEYCODE_ESCAPE);
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) {
+                    mIsBackHeld = false;
+                } else if (!mIsBackHeld && event.getEventTime() - event.getDownTime() >= BACK_HOLD_MS) {
+                    mIsBackHeld = true;
+                    showMenu();
+                }
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                if (!mIsBackHeld && !event.isCanceled()) {
+                    sendKey(KeyEvent.KEYCODE_ESCAPE);
+                }
+                mIsBackHeld = false;
             }
             return true;
         }
@@ -376,10 +554,14 @@ public class TvInterfaceActivity extends Activity {
     }
 
     private void showMenu() {
+        if (mMenu != null && mMenu.isShowing()) {
+            return;
+        }
+
         String[] items = {getString(R.string.tv_interface_switch_back), getString(R.string.tv_interface_reload), getString(R.string.tv_interface_close)};
 
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.tv_interface)
+        mMenu = new AlertDialog.Builder(this)
+                .setTitle(R.string.tv_interface_menu_title)
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
                         MainUIData.instance(this).setTvInterfaceOnStartEnabled(false);
@@ -461,6 +643,11 @@ public class TvInterfaceActivity extends Activity {
     protected void onDestroy() {
         mHandler.removeCallbacksAndMessages(null);
 
+        if (mMenu != null) {
+            mMenu.dismiss();
+            mMenu = null;
+        }
+
         if (mWebView != null) {
             ViewGroup parent = (ViewGroup) mWebView.getParent();
             if (parent != null) {
@@ -500,6 +687,19 @@ public class TvInterfaceActivity extends Activity {
         @JavascriptInterface
         public void back() {
             mHandler.post(() -> sendKey(KeyEvent.KEYCODE_ESCAPE));
+        }
+
+        /**
+         * An arrow key of the remote (touch scrolling of the page scripts)
+         */
+        @JavascriptInterface
+        public void key(String name) {
+            int keyCode = "Up".equals(name) ? KeyEvent.KEYCODE_DPAD_UP : "Down".equals(name) ? KeyEvent.KEYCODE_DPAD_DOWN :
+                    "Left".equals(name) ? KeyEvent.KEYCODE_DPAD_LEFT : "Right".equals(name) ? KeyEvent.KEYCODE_DPAD_RIGHT : -1;
+
+            if (keyCode != -1) {
+                mHandler.post(() -> sendKey(keyCode));
+            }
         }
 
         @JavascriptInterface
@@ -543,8 +743,9 @@ public class TvInterfaceActivity extends Activity {
 
         @Override
         public void onCloseWindow(WebView window) {
-            // "Exit" of the page
-            finish();
+            // "Exit" of the page: the choice of where to go (the interface of the app is one of them).
+            // Leaving outright took the app with it when this interface was the start screen.
+            showMenu();
         }
     }
 }

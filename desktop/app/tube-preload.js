@@ -1,5 +1,5 @@
 "use strict";
-// The link between the app and the YouTube page. The page gets four functions and nothing else.
+// The link between the app and the YouTube page. The page gets five functions and nothing else.
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 const isYouTube = /(^|\.)youtube\.com$/.test(location.hostname);
@@ -29,6 +29,8 @@ if (isYouTube && window.top === window) {
     playing: (isPlaying) => ipcRenderer.send("kd:playing", !!isPlaying),
     /** The "back" button of the remote */
     back: () => ipcRenderer.send("kd:page-back"),
+    /** An arrow key of the remote: "Up", "Down", "Left" or "Right" (touch scrolling) */
+    key: (name) => ipcRenderer.send("kd:page-key", String(name)),
     /** A line for the log of the player (kdtube-player.log in the data folder of the app) */
     log: (line) => ipcRenderer.send("kd:log", String(line).slice(0, 500)),
   });

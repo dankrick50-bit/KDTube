@@ -13,12 +13,14 @@ const settings = require("./settings");
 const memory = require("./memory");
 const library = require("./library");
 const cast = require("./cast");
+const updater = require("./updater");
 
 const TV_URL = "https://www.youtube.com/tv";
 // What YouTube gives its TV interface to. The codecs and the resolutions are found out by the page itself.
 const USER_AGENT = "Mozilla/5.0 (PS4; Leanback Shell) Cobalt/26.lts.0-qa; compatible; KDTube/" + app.getVersion();
 const BAR_HEIGHT = 44;
 const PANEL_WIDTH = 400;
+const ARROW_KEYS = ["Up", "Down", "Left", "Right"];
 const SPONSOR_API = "https://sponsor.ajay.app/api/skipSegments";
 const SPONSOR_LABELS = {
   sponsor: "sponsor",
@@ -160,6 +162,29 @@ function pressKey(contents, keyCode) {
   contents.sendInputEvent({ type: "keyUp", keyCode });
 }
 
+/**
+ * A test aid (--kd-keys): a finger on the page of YouTube, sent the way a touch screen would.
+ * "swipe:x1/y1/x2/y2" drags from one point to the other in 12 moves, "tap:x/y" touches one point.
+ */
+async function touchStep(step) {
+  const contents = tubeView.webContents;
+  if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
+  const send = (type, touchPoints) => contents.debugger.sendCommand("Input.dispatchTouchEvent", { type, touchPoints });
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const [kind, numbers] = step.split(":");
+  const [x1, y1, x2, y2] = numbers.split("/").map(Number);
+  await send("touchStart", [{ x: x1, y: y1, id: 1 }]);
+  if (kind === "swipe") {
+    for (let i = 1; i <= 12; i++) {
+      await wait(16);
+      await send("touchMove", [{ x: x1 + ((x2 - x1) * i) / 12, y: y1 + ((y2 - y1) * i) / 12, id: 1 }]);
+    }
+  } else {
+    await wait(50);
+  }
+  await send("touchEnd", []);
+}
+
 function goBack() {
   if (panelOpen) {
     setPanel(false);
@@ -230,6 +255,10 @@ function setupIpc() {
   ipcMain.handle("kd:segments", (event, videoId) => (event.sender === tubeView.webContents ? loadSegments(String(videoId)) : []));
   ipcMain.on("kd:page-back", (event) => {
     if (event.sender === tubeView.webContents) pressKey(tubeView.webContents, "Escape");
+  });
+  ipcMain.on("kd:page-key", (event, name) => {
+    // Touch scrolling: the arrows only, and only for the page of YouTube
+    if (event.sender === tubeView.webContents && ARROW_KEYS.includes(name)) pressKey(tubeView.webContents, name);
   });
   ipcMain.on("kd:log", (event, line) => {
     if (event.sender === tubeView.webContents) logPlayer(String(line).slice(0, 500));
@@ -534,9 +563,16 @@ function createWindow() {
     if (option("shot") !== null) win.showInactive();
     else win.show();
     focusContent();
+    // Updates over the air (see updater.js). --kd-update-url=<address>: another update file, also from the sources
+    const updateUrl = option("update-url");
+    if (option("shot") === null || updateUrl) {
+      updater.start({ win, url: updateUrl, force: updateUrl !== null, delayMs: updateUrl ? 3000 : undefined,
+        isEnabled: () => settings.get().updateCheck });
+    }
   });
 
   // --kd-keys=Enter,Down,wait3000,Enter: presses the keys in the page of YouTube, one per second, after --kd-keys-delay
+  // (also "swipe:x1/y1/x2/y2" and "tap:x/y": a finger, see touchStep)
   // --kd-click=<css selector>: clicks an element of the interface of the app, 6 seconds after the start
   const click = option("click");
   if (click) {
@@ -580,6 +616,8 @@ function createWindow() {
               "(function(){var p=document.querySelector('.html5-video-player');if(!p)return 'no player';" +
               "if(typeof p.loadVideoById!=='function')return 'no loadVideoById';p.loadVideoById(" + JSON.stringify(key.slice(5)) + ");return 'asked'})()");
             if (networkLog) networkLog("[status] load: " + result);
+          } else if (/^(swipe|tap):/.test(key)) {
+            await touchStep(key);
           } else if (key.startsWith("shot:")) {
             fs.writeFileSync(base + "-" + key.slice(5) + ".png", (await tubeView.webContents.capturePage()).toPNG());
           } else if (key === "status") {

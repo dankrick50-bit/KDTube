@@ -1,8 +1,10 @@
 package com.liskovsoft.smartyoutubetv2.common.exoplayer.other;
 
+import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.LoadControl;
 import com.google.android.exoplayer2.Renderer;
 import com.google.android.exoplayer2.source.TrackGroupArray;
+import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.upstream.Allocator;
 import com.google.android.exoplayer2.upstream.DefaultAllocator;
@@ -24,10 +26,15 @@ import com.liskovsoft.smartyoutubetv2.common.misc.MemoryKeeper;
  */
 public class MemoryCappedLoadControl implements LoadControl {
     private static final String TAG = MemoryCappedLoadControl.class.getSimpleName();
+    /**
+     * The part already played gets 1/4 of the budget at most
+     */
+    private static final int BACK_BUFFER_SHARE = 4;
     private final LoadControl mControl;
     private final MemoryKeeper mKeeper;
     private long mMaxBytes = -1;
     private boolean mIsLimited;
+    private volatile long mBytesPerSecond;
 
     public MemoryCappedLoadControl(LoadControl control, MemoryKeeper keeper) {
         mControl = control;
@@ -91,8 +98,38 @@ public class MemoryCappedLoadControl implements LoadControl {
     @Override
     public void onTracksSelected(Renderer[] renderers, TrackGroupArray trackGroups, TrackSelectionArray trackSelections) {
         mControl.onTracksSelected(renderers, trackGroups, trackSelections);
+        mBytesPerSecond = getBytesPerSecond(trackSelections);
         // The control has just set its own target
         applyAllocatorTarget();
+    }
+
+    /**
+     * What a second of the chosen streams takes, the heaviest of what an adaptive choice may switch to
+     */
+    private static long getBytesPerSecond(TrackSelectionArray trackSelections) {
+        long bitrate = 0;
+
+        for (int i = 0; i < trackSelections.length; i++) {
+            TrackSelection selection = trackSelections.get(i);
+
+            if (selection == null) {
+                continue;
+            }
+
+            int max = 0;
+
+            for (int j = 0; j < selection.length(); j++) {
+                Format format = selection.getFormat(j);
+
+                if (format != null && format.bitrate > max) {
+                    max = format.bitrate;
+                }
+            }
+
+            bitrate += max;
+        }
+
+        return bitrate / 8;
     }
 
     @Override
@@ -112,9 +149,22 @@ public class MemoryCappedLoadControl implements LoadControl {
         return mControl.getAllocator();
     }
 
+    /**
+     * NOTE: asked on every step of the playback (see ExoPlayerImplInternal), so it follows the stream and the memory.
+     */
     @Override
     public long getBackBufferDurationUs() {
-        return Math.min(mControl.getBackBufferDurationUs(), mKeeper.getBackBufferUs());
+        long result = Math.min(mControl.getBackBufferDurationUs(), mKeeper.getBackBufferUs());
+
+        // The part already played takes from the same budget as the part ahead: by time alone, 20 seconds of 4K
+        // (~100 MB) are more than the whole budget of a 2 GB device, and the part ahead is squeezed to its
+        // minimum: stalls. So it gets a quarter of the budget at most, whatever that is in seconds of this stream.
+        if (mBytesPerSecond > 0 && result > 0) {
+            long sizeUs = mKeeper.getPlayerBufferBytes() / BACK_BUFFER_SHARE * 1_000_000 / mBytesPerSecond;
+            result = Math.min(result, sizeUs);
+        }
+
+        return result;
     }
 
     @Override

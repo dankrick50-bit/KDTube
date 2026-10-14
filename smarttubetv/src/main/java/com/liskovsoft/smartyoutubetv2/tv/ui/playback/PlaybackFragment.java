@@ -39,7 +39,9 @@ import com.google.android.exoplayer2.ControlDispatcher;
 import com.google.android.exoplayer2.DefaultControlDispatcher;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.decoder.DecoderCounters;
 import com.google.android.exoplayer2.ext.leanback.LeanbackPlayerAdapter;
 import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector;
 import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
@@ -1050,6 +1052,16 @@ public class PlaybackFragment extends SeekModePlaybackFragment implements Playba
     @Override
     public FormatItem getVideoFormat() {
         return mExoPlayerController.getVideoFormat();
+    }
+
+    @Override
+    public DecoderCounters getVideoDecoderCounters() {
+        return mPlayer != null ? mPlayer.getVideoDecoderCounters() : null;
+    }
+
+    @Override
+    public Format getPlayingVideoFormat() {
+        return mPlayer != null ? mPlayer.getVideoFormat() : null;
     }
 
     @Override

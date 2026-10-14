@@ -16,6 +16,10 @@ public interface FormatItem {
     FormatItem VIDEO_FHD_AVC_60 = ExoFormatItem.fromVideoSpec("1920,1080,60,avc", false);
     FormatItem VIDEO_FHD_VP9_60 = ExoFormatItem.fromVideoSpec("1920,1080,60,vp9", false);
     FormatItem VIDEO_4K_VP9_60 = ExoFormatItem.fromVideoSpec("3840,2160,60,vp9", false);
+    FormatItem VIDEO_8K_VP9_60 = ExoFormatItem.fromVideoSpec("7680,4320,60,vp9", false);
+    // AV1: the same picture in less data (YouTube encodes it more efficiently). Falls back to VP9 where a video has no AV1.
+    FormatItem VIDEO_4K_AV1_60 = ExoFormatItem.fromVideoSpec("3840,2160,60,av01", false);
+    FormatItem VIDEO_8K_AV1_60 = ExoFormatItem.fromVideoSpec("7680,4320,60,av01", false);
     FormatItem SUBTITLE_NONE = ExoFormatItem.fromSubtitleParams(null);
     FormatItem AUDIO_HQ_MP4A = ExoFormatItem.fromAudioSpecs(String.format("%s,null", "mp4a")); // Note, 5.1 mp4a doesn't work in 5.1 mode
     FormatItem AUDIO_51_EC3 = ExoFormatItem.fromAudioSpecs(String.format("%s,null", "ec-3")); // Note, 5.1 mp4a doesn't work in 5.1 mode

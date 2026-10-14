@@ -18,6 +18,8 @@ const DEFAULTS = {
   // System
   hardwareAcceleration: true,
   startFullscreen: false,
+  touchScroll: true,
+  updateCheck: true,
   // Device media: the folders the user added, and whether all the drives are searched
   folders: [],
   allDrives: false,
@@ -66,8 +68,8 @@ function set(key, value) {
 
 /** The part a page needs: no paths of the computer in it. */
 function forPage() {
-  const { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide } = values;
-  return { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide };
+  const { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, touchScroll } = values;
+  return { adblock, sponsorblock, sponsorCategories, bestQuality, sharpen, levelling, dialogue, wide, touchScroll };
 }
 
 module.exports = { DEFAULTS, load, save, get, set, forPage };

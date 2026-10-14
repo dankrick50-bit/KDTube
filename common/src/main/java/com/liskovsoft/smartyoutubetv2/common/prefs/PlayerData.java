@@ -17,6 +17,8 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.manager.PlayerC
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.other.SubtitleManager.SubtitleStyle;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.ExoFormatItem;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.FormatItem;
+import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.VideoLimits;
+import com.google.android.exoplayer2.util.MimeTypes;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.MediaTrack;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs.ProfileChangeListener;
 import com.liskovsoft.smartyoutubetv2.common.prefs.common.DataChangeBase;
@@ -52,6 +54,7 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
     private FormatItem mTempVideoFormat;
     private FormatItem mAudioFormat;
     private boolean mIsBestAudioApplied;
+    private boolean mIsBestVideoApplied;
     private FormatItem mSubtitleFormat;
     private int mVideoBufferType;
     private final List<SubtitleStyle> mSubtitleStyles = new ArrayList<>();
@@ -729,6 +732,15 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
                 formatItem = FormatItem.VIDEO_SD_AVC_30;
             } else if (VERSION.SDK_INT <= 23 && DeviceHelpers.isVP9ResolutionSupported(1080)) {
                 formatItem = FormatItem.VIDEO_FHD_VP9_60;
+            // MOD: the best the chip decodes. 8K where it does 8K (the videos that have less play their best),
+            // and AV1 before VP9 where AV1 is in the hardware: the same picture in less data, which also means
+            // less to buffer in the memory of a small device.
+            } else if (isHardwareAV1(7680, 4320)) {
+                formatItem = FormatItem.VIDEO_8K_AV1_60;
+            } else if (DeviceHelpers.isVP9ResolutionSupported(4320)) {
+                formatItem = FormatItem.VIDEO_8K_VP9_60;
+            } else if (isHardwareAV1(3840, 2160)) {
+                formatItem = FormatItem.VIDEO_4K_AV1_60;
             } else if (DeviceHelpers.isVP9ResolutionSupported(2160)) {
                 formatItem = FormatItem.VIDEO_4K_VP9_60;
             } else if (DeviceHelpers.isVP9ResolutionSupported(1080)) {
@@ -737,6 +749,14 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
         }
 
         return formatItem != null ? formatItem : FormatItem.VIDEO_HD_AVC_30;
+    }
+
+    /**
+     * AV1 in the hardware at this size. NOTE: not DeviceHelpers.isAV1ResolutionSupported: it assumes 4K where a
+     * chip reports less (a quirk of some), too loose for a default. And AV1 needs Android 10 to be reliable.
+     */
+    private static boolean isHardwareAV1(int width, int height) {
+        return VERSION.SDK_INT >= 29 && VideoLimits.isHardwareSizeSupported(MimeTypes.VIDEO_AV1, width, height);
     }
 
     public FormatItem getDefaultSubtitleFormat() {
@@ -860,6 +880,17 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
             mAudioFormat = getDefaultAudioFormat();
         }
 
+        mIsBestVideoApplied = Helpers.parseBoolean(split, 64, false);
+
+        // Once: the old default (4K VP9) moves to the best the chip decodes (8K, AV1). A format chosen by hand stays.
+        if (!mIsBestVideoApplied) {
+            mIsBestVideoApplied = true;
+
+            if (Helpers.equals(mVideoFormat, FormatItem.VIDEO_4K_VP9_60)) {
+                mVideoFormat = getDefaultVideoFormat();
+            }
+        }
+
         if (speeds != null) {
             for (String speedSpec : speeds) {
                 SpeedItem item = SpeedItem.fromString(speedSpec);
@@ -896,7 +927,7 @@ public class PlayerData extends DataChangeBase implements PlayerConstants, Profi
                 mIsNumberKeySeekEnabled, mIsSkip24RateEnabled, mAfrPauseMs, mIsLiveChatEnabled, mLastSubtitleFormats, mLastSpeed, mRotationAngle,
                 mZoomPercents, mPlaybackMode, mAudioLanguage, mSubtitleLanguage, mEnabledSubtitlesPerChannel, mIsSubtitlesPerChannelEnabled,
                 mIsSpeedPerChannelEnabled, Helpers.mergeArray(mSpeeds.values().toArray()), mPitch, mIsSkipShortsEnabled, mLastAudioLanguages,
-                mIsVideoFlipEnabled, mIsAudioDelayEnabled, mIsBestAudioApplied
+                mIsVideoFlipEnabled, mIsAudioDelayEnabled, mIsBestAudioApplied, mIsBestVideoApplied
         ));
     }
 

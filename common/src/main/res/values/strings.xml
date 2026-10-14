@@ -807,6 +807,8 @@
     <string name="tv_interface_switch_back">Go to the KDTube interface</string>
     <string name="tv_interface_reload">Reload</string>
     <string name="tv_interface_close">Close</string>
+    <string name="tv_interface_menu_title">KDTube (hold Back to open this menu)</string>
+    <string name="playback_too_heavy">%s is too much for this device: switching to a smoother stream</string>
     <string name="tv_interface_no_engine">The web engine of this device (Android System WebView) is missing or too old for the YouTube TV interface</string>
     <string name="virtual_surround_desc">5.1 / 7.1 sound (Dolby, DTS) on two speakers or headphones. Leave off with a surround system</string>
     <string name="virtual_surround_auto">Auto (when the sound goes to two speakers or headphones)</string>

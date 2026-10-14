@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- An update found at launch opens the install dialog right away (otherwise it's only pinned to
+         the side panel). Overridden by the flavors that want it (stkdtube). -->
+    <bool name="update_prompt_at_launch">false</bool>
+</resources>

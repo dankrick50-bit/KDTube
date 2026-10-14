@@ -1,9 +1,18 @@
-The update channel of KDTube (Android / Fire OS)
-================================================
+The update channel of KDTube (Android / Fire OS, and the PC edition)
+====================================================================
 
-The app looks for updates here:
+The Android / Fire OS app looks for updates here:
 
     https://github.com/dankrick50-bit/KDTube/releases/download/latest/kdtube.json
+
+and the PC edition (Windows, Ubuntu) here, in the same release:
+
+    https://github.com/dankrick50-bit/KDTube/releases/download/latest/kdtube-pc.json
+
+Both check at every start. A newer version is offered right away with what's new
+in it and an install button. Android then shows its own "Install" confirmation
+(a sideloaded app can't skip it); Windows installs without questions and starts
+KDTube again; Ubuntu opens the .deb in the installer of the system.
 
 That is a release with the tag "latest" in your repository. Until it exists the app
 finds no update (checking by hand says so; nothing else happens).
@@ -18,11 +27,14 @@ From the folder of the sources, one command does it (it uses the sign-in of
 By hand, the same thing:
 1. On GitHub: the repository > Releases > "Draft a new release" (or edit the one
    that is there). Tag: latest
-2. Attach the four files of this folder:
+2. Attach the files of this folder:
        kdtube.json
        kdtube_armeabi-v7a.apk
        kdtube_arm64-v8a.apk
        kdtube_x86.apk
+       kdtube-pc.json                          (when the PC edition was built)
+       kdtube-pc-windows-x64-setup.exe
+       kdtube-pc-ubuntu-amd64.deb
    (replace the old ones when the release exists already)
 3. Publish. Every installed KDTube with a lower version offers the update at its
    next check.
@@ -35,6 +47,10 @@ Rules
 * The apk files must be signed with the same key as the installed app, otherwise
   the device refuses the update. packaging/make-installers.sh takes care of it as
   long as the key file stays the same. Keep a copy of the key in a safe place.
+* The PC edition: the version is the one of desktop/app/package.json, and it has to
+  be higher than the installed one too. kdtube-pc.json holds the checksums of the
+  files: a file that doesn't match is refused, so replace the files and the json
+  together (publish-update.js does).
 * What the dialog of the update shows is the "changelog" list in kdtube.json:
   edit it before publishing, or give it to the build:
   KDTUBE_CHANGELOG="first line|second line" packaging/make-installers.sh

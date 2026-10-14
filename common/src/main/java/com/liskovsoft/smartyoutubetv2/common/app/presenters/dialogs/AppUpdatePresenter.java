@@ -66,6 +66,11 @@ public class AppUpdatePresenter extends BasePresenter<Void> implements AppUpdate
             showUpdateDialog(versionName, changelog, apkPath);
         } else if (GeneralData.instance(getContext()).isOldUpdateNotificationsEnabled()) {
             showUpdateDialog(versionName, changelog, apkPath);
+        } else if (getContext() != null && getContext().getResources().getBoolean(R.bool.update_prompt_at_launch)) {
+            // MOD: offered right away. The side panel keeps it too: for a dialog that was closed, or one that
+            // couldn't be shown (a video was playing)
+            pinUpdateSection(versionName, changelog, apkPath);
+            showUpdateDialog(versionName, changelog, apkPath);
         } else {
             pinUpdateSection(versionName, changelog, apkPath);
         }

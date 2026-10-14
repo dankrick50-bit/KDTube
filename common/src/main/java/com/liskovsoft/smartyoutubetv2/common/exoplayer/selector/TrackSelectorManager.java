@@ -215,6 +215,11 @@ public class TrackSelectorManager implements TrackSelectorCallback {
                     continue;
                 }
 
+                // MOD: more than this device plays smoothly (the frame rate, or frames dropped before): see VideoLimits
+                if (!PlayerTweaksData.instance(mContext).isAllFormatsUnlocked() && !VideoLimits.instance(mContext).isPlayable(format)) {
+                    continue;
+                }
+
                 // Selected track or not will be decided later in setSelection() routine
 
                 renderer.mediaTracks[groupIndex][trackIndex] = mediaTrack;

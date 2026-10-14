@@ -57,7 +57,7 @@ fi
 # One version in the folder: what the run before left there goes (the files this script makes, nothing else)
 if [ -d "$OUT" ]; then
     find "$OUT" -maxdepth 3 -type f \( -name 'KDTube-*.apk' -o -name 'KDTube-*.exe' -o -name 'KDTube-*.deb' -o -name 'KDTube-*.tar.gz' \
-        -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'README.txt' -o -name 'README.md' \) -delete
+        -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'kdtube-pc*' -o -name 'README.txt' -o -name 'README.md' \) -delete
 fi
 # The same for the signed files of other versions: the TV installers pack what is in that folder
 if [ -d "$WORK/apk" ]; then

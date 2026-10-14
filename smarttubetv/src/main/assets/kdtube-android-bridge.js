@@ -52,6 +52,10 @@
     back: function () {
       host.back();
     },
+    /** An arrow key of the remote: "Up", "Down", "Left" or "Right" (touch scrolling) */
+    key: function (name) {
+      host.key(String(name));
+    },
     log: function (line) {
       host.log(String(line).slice(0, 500));
     }

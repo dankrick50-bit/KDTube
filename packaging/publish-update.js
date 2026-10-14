@@ -20,6 +20,12 @@ const ROOT = path.resolve(__dirname, "..");
 const UPDATES = path.join(ROOT, "installers", "Updates");
 const TAG = "latest";
 const DRY_RUN = process.argv.includes("--dry-run");
+const CONTENT_TYPES = {
+  ".json": "application/json",
+  ".apk": "application/vnd.android.package-archive",
+  ".exe": "application/vnd.microsoft.portable-executable",
+  ".deb": "application/vnd.debian.binary-package",
+};
 
 function git(args, input) {
   return execFileSync("git", args, { cwd: ROOT, input, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] }).trim();
@@ -47,8 +53,12 @@ async function main() {
   const info = JSON.parse(fs.readFileSync(path.join(UPDATES, "kdtube.json"), "utf8"));
   const version = Object.keys(info).find((key) => key !== "package");
   const changelog = (info[version].changelog || []).join("\n");
-  // The apk files first, the list of them last
-  const files = fs.readdirSync(UPDATES).filter((name) => /^kdtube_.+\.apk$/.test(name)).sort().concat(["kdtube.json"]);
+  // The apk files first, the list of them last. The same for the PC edition when it was built
+  // (desktop/app/updater.js reads kdtube-pc.json).
+  const present = fs.readdirSync(UPDATES);
+  const pcFiles = present.filter((name) => /^kdtube-pc-.+\.(exe|deb)$/.test(name)).sort();
+  const files = present.filter((name) => /^kdtube_.+\.apk$/.test(name)).sort().concat(["kdtube.json"])
+    .concat(pcFiles.length && present.includes("kdtube-pc.json") ? pcFiles.concat(["kdtube-pc.json"]) : []);
   const commit = git(["rev-parse", "HEAD"]);
   console.log("KDTube " + version + " (version code " + info[version].versionCode + ") to " + repo + ", release \"" + TAG + "\", commit " + commit.slice(0, 7));
   if (DRY_RUN) {
@@ -94,7 +104,7 @@ async function main() {
     const old = (release.assets || []).find((asset) => asset.name === name);
     if (old) must(await api("DELETE", "/releases/assets/" + old.id), "Removing the old " + name);
     must(await api("POST", "https://uploads.github.com/repos/" + repo + "/releases/" + release.id + "/assets?name=" + encodeURIComponent(name), data,
-      { "Content-Type": name.endsWith(".json") ? "application/json" : "application/vnd.android.package-archive" }), "Sending " + name);
+      { "Content-Type": CONTENT_TYPES[path.extname(name)] || "application/octet-stream" }), "Sending " + name);
     console.log("   sent " + name + "  " + (data.length / 1048576).toFixed(1) + " MB");
   }
 

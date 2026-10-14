@@ -61,6 +61,29 @@
     return false;
   }
 
+  /**
+   * settings.codecLimits: the biggest picture the chip decodes per kind of video, {"vp09": [3840, 2160]}.
+   * The engine answers by the codec alone and would take 8K on a chip that stops at 4K. Only set where
+   * it's known (Android).
+   */
+  function isWithinCodecLimit(params) {
+    var limits = settings.codecLimits;
+    if (!limits || !params.codecs) return true;
+    var width = Number(params.width) || 0;
+    var height = Number(params.height) || 0;
+    if (!width && !height) return true;
+    for (var name in limits) {
+      if (params.codecs.indexOf(name) !== 0) continue;
+      var limit = limits[name];
+      if (width && height) {
+        // A picture on its side (Shorts) is the same work for the chip
+        return Math.max(width, height) <= limit[0] && Math.min(width, height) <= limit[1];
+      }
+      return width ? width <= limit[0] : height <= limit[1];
+    }
+    return true;
+  }
+
   function inRange(value, max) {
     if (value === undefined) return true;
     var number = Number(value);
@@ -89,6 +112,9 @@
         var answer;
         if (isBlockedCodec(params.codecs)) {
           // The device would have to decode it on the processor: see blockCodecs
+          answer = false;
+        } else if (!isWithinCodecLimit(params)) {
+          // More than the chip of the device decodes: see codecLimits
           answer = false;
         } else if (!inRange(params.width, MAX_WIDTH) || !inRange(params.height, MAX_HEIGHT) ||
             !inRange(params.framerate, MAX_FRAME_RATE) || !inRange(params.bitrate, MAX_BITRATE) ||
@@ -273,6 +299,145 @@
     return result;
   };
 
+  // ---------- touch ----------
+
+  // The TV interface is moved with the arrow keys of a remote, so a finger on the screen did nothing, a drag
+  // least of all. A drag is turned into the keys here: one for the length of an item, in the direction that
+  // makes the list follow the finger. A quick flick runs on for a few more after the finger is lifted.
+  // A tap is left to the page: the engine makes a click of it.
+  var TOUCH_SLOP = 12; // px a finger may wander before it is a drag
+  var MAX_KEYS_PER_MOVE = 3;
+  var MAX_FLING_KEYS = 8;
+  var drag = null;
+  var flingTimer = 0;
+  var clickBlockedUntil = 0;
+  var touchSheet = null;
+
+  // Without this the engine claims a drag for itself (to scroll a page that can't scroll) and stops telling us about it.
+  // NOTE: not a <style> element: the content policy of the page forbids those. A sheet made in script isn't covered by it.
+  function allowTouchDrags() {
+    try {
+      if (!touchSheet) {
+        touchSheet = new CSSStyleSheet();
+        touchSheet.replaceSync("*{touch-action:none!important}");
+      }
+      if (document.adoptedStyleSheets.indexOf(touchSheet) < 0) {
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([touchSheet]);
+      }
+    } catch (e) {
+      diag("touch scrolling: no style sheet (" + e.message + ")", true);
+    }
+  }
+
+  function isFinger(event) {
+    return event.pointerType === "touch" || event.pointerType === "pen";
+  }
+
+  /** The length of the item that has the focus along the axis: how far a finger goes for one key */
+  function itemLength(axis) {
+    var size = axis === "y" ? window.innerHeight : window.innerWidth;
+    var length = 0;
+    var focused = document.activeElement;
+    if (focused && focused !== document.body && focused.getBoundingClientRect) {
+      var box = focused.getBoundingClientRect();
+      length = axis === "y" ? box.height : box.width;
+    }
+    // The focus can sit on something much smaller or bigger than an item of the list
+    return Math.min(Math.max(length || size * 0.18, size * 0.1), size * 0.3);
+  }
+
+  function pressForDrag(axis, sign) {
+    // A finger that goes up or left takes the list up or left: the focus goes down or right
+    bridge.key(axis === "y" ? (sign < 0 ? "Down" : "Up") : (sign < 0 ? "Right" : "Left"));
+  }
+
+  function stopFling() {
+    clearTimeout(flingTimer);
+    flingTimer = 0;
+  }
+
+  function fling(finished) {
+    var trail = finished.trail;
+    if (trail.length < 2) return;
+    var first = trail[0];
+    var last = trail[trail.length - 1];
+    var span = last.time - first.time;
+    // A finger that rested before it was lifted doesn't throw anything
+    if (span < 10 || performance.now() - last.time > 100) return;
+    var speed = (last.position - first.position) / span; // px per ms
+    if (Math.abs(speed) < 0.5) return;
+    var more = Math.min(MAX_FLING_KEYS, Math.round(Math.abs(speed) * 300 / itemLength(finished.axis)));
+    var sign = speed < 0 ? -1 : 1;
+    var delay = 70;
+    (function next() {
+      if (more-- <= 0) {
+        flingTimer = 0;
+        return;
+      }
+      pressForDrag(finished.axis, sign);
+      delay *= 1.3;
+      flingTimer = setTimeout(next, delay);
+    })();
+  }
+
+  function onFingerDown(event) {
+    if (!isFinger(event) || !settings.touchScroll || typeof bridge.key !== "function") return;
+    stopFling();
+    clickBlockedUntil = 0;
+    if (drag) return; // a second finger: the first one leads
+    allowTouchDrags();
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, axis: null, trail: [] };
+  }
+
+  function onFingerMove(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    var dx = event.clientX - drag.x;
+    var dy = event.clientY - drag.y;
+    if (!drag.axis) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < TOUCH_SLOP) return;
+      drag.axis = Math.abs(dy) >= Math.abs(dx) ? "y" : "x";
+      // What follows is a drag, not a tap: the page gets no click out of it
+      clickBlockedUntil = Infinity;
+    }
+    var vertical = drag.axis === "y";
+    var delta = vertical ? dy : dx;
+    var length = itemLength(drag.axis);
+    for (var keys = 0; keys < MAX_KEYS_PER_MOVE && Math.abs(delta) >= length; keys++) {
+      var sign = delta < 0 ? -1 : 1;
+      pressForDrag(drag.axis, sign);
+      delta -= sign * length;
+    }
+    // What is left of the drag counts for the next key
+    if (vertical) drag.y = event.clientY - delta;
+    else drag.x = event.clientX - delta;
+
+    var trail = drag.trail;
+    trail.push({ time: event.timeStamp, position: vertical ? event.clientY : event.clientX });
+    while (trail.length > 2 && event.timeStamp - trail[0].time > 120) trail.shift();
+  }
+
+  function onFingerUp(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    var finished = drag;
+    drag = null;
+    if (!finished.axis) return; // a tap
+    clickBlockedUntil = performance.now() + 350;
+    if (event.type === "pointerup") fling(finished);
+  }
+
+  document.addEventListener("pointerdown", onFingerDown, { capture: true, passive: true });
+  document.addEventListener("pointermove", onFingerMove, { capture: true, passive: true });
+  document.addEventListener("pointerup", onFingerUp, { capture: true, passive: true });
+  document.addEventListener("pointercancel", onFingerUp, { capture: true, passive: true });
+  document.addEventListener("click", function (event) {
+    if (performance.now() < clickBlockedUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
+  allowTouchDrags();
+  document.addEventListener("DOMContentLoaded", allowTouchDrags);
+
   // ---------- the video ----------
 
   var video = null;
@@ -446,6 +611,7 @@
     loadSegments();
     watchForFailure();
     applyViewport();
+    allowTouchDrags();
     if (++ticks % 20 === 0) noteFrames();
   }, 1500);
   window.addEventListener("hashchange", loadSegments);
