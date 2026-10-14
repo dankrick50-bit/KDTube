@@ -98,10 +98,20 @@ async function main() {
     console.log("   sent " + name + "  " + (data.length / 1048576).toFixed(1) + " MB");
   }
 
-  // What an app sees now
-  const check = await fetch("https://github.com/" + repo + "/releases/download/" + TAG + "/kdtube.json", { headers: { "Cache-Control": "no-cache" } });
-  const seen = check.ok ? JSON.parse(await check.text()) : null;
-  if (!seen || !seen[version]) throw new Error("The update file can't be read back (" + check.status + ")");
+  // What an app sees now. A file that was just sent needs some seconds until it can be downloaded
+  let seen = null;
+  let status = 0;
+  for (let i = 0; i < 15 && !(seen && seen[version]); i++) {
+    if (i) await new Promise((resolve) => setTimeout(resolve, 4000));
+    const check = await fetch("https://github.com/" + repo + "/releases/download/" + TAG + "/kdtube.json", { headers: { "Cache-Control": "no-cache" } });
+    status = check.status;
+    try {
+      seen = check.ok ? JSON.parse(await check.text()) : null;
+    } catch (e) {
+      seen = null;
+    }
+  }
+  if (!seen || !seen[version]) throw new Error("The files were sent, but the update file can't be read back (" + status + ")");
   console.log("== done: installed apps below " + version + " are offered the update at their next check");
 }
 
