@@ -26,10 +26,16 @@ import javax.microedition.khronos.opengles.GL10;
 /**
  * A video surface that sharpens the picture.<br/>
  * <br/>
- * The decoder draws into a texture, and the texture is drawn to the screen through a small filter:
- * every pixel gets more of itself and less of its four neighbours (the same 3x3 kernel as in the
- * player of Extreme InfiniTV, applied after the picture is scaled to the screen).
- * It crisps the edges; it cannot add detail that was never in the stream.<br/>
+ * The decoder draws into a texture, and the texture is drawn to the screen through a small filter, after
+ * the picture is scaled to the screen: RCAS, the sharpening of AMD FidelityFX Super Resolution 1.0.
+ * Every pixel takes from its four neighbours as much as it can without leaving the range they span: edges
+ * get crisper and no bright or dark rims appear around them (a fixed kernel makes those). A lone pixel
+ * that differs from its ring is grain or a block of the compression: it's sharpened half as much.
+ * It crisps what is in the stream; it cannot add detail that was never there.<br/>
+ * <br/>
+ * NOTE: the upscaling half of FSR is not here on purpose. At 4K it reads ~12 texels for each of 8 million
+ * pixels, 60 times a second: several times what the GPU of a TV stick does, so frames would drop. The video
+ * scaler of the chip upscales for free. This part costs the same 5 reads per pixel as the kernel before it.<br/>
  * <br/>
  * NOTE: costs GPU time for every frame and goes around the HDR path of the device.
  * That's why the regular surface is used whenever the sharpening is off.
@@ -37,10 +43,10 @@ import javax.microedition.khronos.opengles.GL10;
 public class SharpenSurfaceWrapper implements SurfaceWrapper {
     private static final String TAG = SharpenSurfaceWrapper.class.getSimpleName();
     /**
-     * How much of each neighbouring pixel is taken away
+     * The share of the sharpening RCAS allows (its "sharpness" of 0.8 and 0.15 stops: exp2(-stops))
      */
-    public static final float STRENGTH_LIGHT = 0.22f;
-    public static final float STRENGTH_STRONG = 0.5f;
+    public static final float STRENGTH_LIGHT = 0.57f;
+    public static final float STRENGTH_STRONG = 0.9f;
     private static final String VERTEX_SHADER =
             "attribute vec4 aPosition;\n" +
             "attribute vec4 aTexCoord;\n" +
@@ -60,6 +66,34 @@ public class SharpenSurfaceWrapper implements SurfaceWrapper {
             "  vUp = vCenter - uStepY;\n" +
             "  vDown = vCenter + uStepY;\n" +
             "}\n";
+    /**
+     * RCAS (FidelityFX FSR 1.0, FsrRcasF with its noise detection). b, d, f, h: the pixels above, left,
+     * right and below; e: the pixel itself.
+     */
+    static final String RCAS_BODY =
+            "float luma2(vec3 c) { return c.b * 0.5 + (c.r * 0.5 + c.g); }\n" +
+            "void main() {\n" +
+            "  vec3 b = texture2D(uTexture, vUp).rgb;\n" +
+            "  vec3 d = texture2D(uTexture, vLeft).rgb;\n" +
+            "  vec3 e = texture2D(uTexture, vCenter).rgb;\n" +
+            "  vec3 f = texture2D(uTexture, vRight).rgb;\n" +
+            "  vec3 h = texture2D(uTexture, vDown).rgb;\n" +
+            "  vec3 mn4 = min(min(b, d), min(f, h));\n" +
+            "  vec3 mx4 = max(max(b, d), max(f, h));\n" +
+            // How far the ring may pull the pixel before it leaves the range of the ring: no halos
+            "  vec3 hitMin = mn4 / (4.0 * max(mx4, vec3(1.0 / 1024.0)));\n" +
+            "  vec3 hitMax = (1.0 - mx4) / min(4.0 * mn4 - 4.0, vec3(-1.0 / 1024.0));\n" +
+            "  vec3 lobeRGB = max(-hitMin, hitMax);\n" +
+            "  float lobe = max(-0.1875, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * uStrength;\n" +
+            // A lone pixel unlike its ring: grain or compression, sharpened half as much
+            "  float bL = luma2(b); float dL = luma2(d); float eL = luma2(e); float fL = luma2(f); float hL = luma2(h);\n" +
+            "  float range = max(max(max(bL, dL), max(eL, fL)), hL) - min(min(min(bL, dL), min(eL, fL)), hL);\n" +
+            "  float noise = clamp(abs(0.25 * (bL + dL + fL + hL) - eL) / max(range, 1.0 / 256.0), 0.0, 1.0);\n" +
+            "  lobe *= 1.0 - 0.5 * noise;\n" +
+            // The weights sum to one: the brightness stays the same
+            "  vec3 color = (lobe * (b + d + f + h) + e) / (4.0 * lobe + 1.0);\n" +
+            "  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);\n" +
+            "}\n";
     private static final String FRAGMENT_SHADER =
             "#extension GL_OES_EGL_image_external : require\n" +
             "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
@@ -74,13 +108,7 @@ public class SharpenSurfaceWrapper implements SurfaceWrapper {
             "varying vec2 vRight;\n" +
             "varying vec2 vUp;\n" +
             "varying vec2 vDown;\n" +
-            "void main() {\n" +
-            "  vec3 center = texture2D(uTexture, vCenter).rgb;\n" +
-            "  vec3 around = texture2D(uTexture, vLeft).rgb + texture2D(uTexture, vRight).rgb +\n" +
-            "      texture2D(uTexture, vUp).rgb + texture2D(uTexture, vDown).rgb;\n" +
-            // The weights sum to one: the brightness stays the same
-            "  gl_FragColor = vec4(clamp(center * (1.0 + 4.0 * uStrength) - around * uStrength, 0.0, 1.0), 1.0);\n" +
-            "}\n";
+            RCAS_BODY;
     private static volatile float sStrength = STRENGTH_LIGHT;
     private final GLSurfaceView mVideoSurface;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
