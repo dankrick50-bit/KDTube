@@ -53,6 +53,9 @@ fi
 [ -f "${ADB_DIR:-}/adb.exe" ] || fail "adb isn't found: set ADB_DIR"
 [ -f "$CSC" ] || fail "The C# compiler of Windows isn't found: $CSC"
 [ -f "$RELEASE_DIR/KDTube_${VERSION}_universal.apk" ] || fail "Build the release first (see the top of this file)"
+# The native core keeps the memory of 1-3 GB TVs low (rust/README.md): a release without it is a step back
+unzip -l "$RELEASE_DIR/KDTube_${VERSION}_universal.apk" | grep -q "libkdtube_core.so" ||
+    fail "The release was built without the native core: build it with -PrustCore (see the top of this file and rust/README.md)"
 
 # One version in the folder: what the run before left there goes (the files this script makes, nothing else)
 if [ -d "$OUT" ]; then
