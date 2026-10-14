@@ -14,6 +14,7 @@
 #   APKSIGNER_JAR          $ANDROID_HOME/build-tools/*/lib/apksigner.jar
 #   ADB_DIR                $ANDROID_HOME/platform-tools  or  %LOCALAPPDATA%/Android/Sdk/platform-tools
 #   KDTUBE_SKIP_DESKTOP    set to 1 to leave out the PC edition (Windows setup, Ubuntu packages)
+#   KDTUBE_CHANGELOG       "KDTube <version>"                 what the update dialog shows, lines separated by |
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,6 +59,10 @@ if [ -d "$OUT" ]; then
     find "$OUT" -maxdepth 3 -type f \( -name 'KDTube-*.apk' -o -name 'KDTube-*.exe' -o -name 'KDTube-*.deb' -o -name 'KDTube-*.tar.gz' \
         -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'README.txt' -o -name 'README.md' \) -delete
 fi
+# The same for the signed files of other versions: the TV installers pack what is in that folder
+if [ -d "$WORK/apk" ]; then
+    find "$WORK/apk" -maxdepth 1 -type f -name 'KDTube-*' ! -name "KDTube-$VERSION-*" -delete
+fi
 mkdir -p "$WORK/apk" "$OUT/Android/From-a-PC" "$OUT/FireOS/Fire-TV-Stick-4K" "$OUT/FireOS/Fire-HD-10-2023" "$OUT/Windows" "$OUT/Ubuntu" "$OUT/Updates"
 
 echo "== KDTube $VERSION ($STAMP)"
@@ -82,6 +87,8 @@ echo "== the update channel"
 for abi in arm64-v8a armeabi-v7a x86; do
     cp "$WORK/apk/KDTube-$VERSION-$abi.apk" "$OUT/Updates/kdtube_$abi.apk"
 done
+# What the update dialog of the app shows. KDTUBE_CHANGELOG="first line|second line"
+CHANGELOG="$(printf '%s' "${KDTUBE_CHANGELOG:-KDTube $VERSION}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/|/", "/g')"
 cat > "$OUT/Updates/kdtube.json" <<EOF
 {
     "package": {
@@ -98,7 +105,7 @@ cat > "$OUT/Updates/kdtube.json" <<EOF
 
     "$VERSION": {
         "versionCode": $VERSION_CODE,
-        "changelog": ["KDTube $VERSION"]
+        "changelog": ["$CHANGELOG"]
     }
 }
 EOF

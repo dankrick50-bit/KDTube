@@ -10,6 +10,12 @@ finds no update (checking by hand says so; nothing else happens).
 
 Publishing a version
 --------------------
+From the folder of the sources, one command does it (it uses the sign-in of
+"git push"):
+
+    node packaging/publish-update.js
+
+By hand, the same thing:
 1. On GitHub: the repository > Releases > "Draft a new release" (or edit the one
    that is there). Tag: latest
 2. Attach the four files of this folder:
@@ -30,4 +36,5 @@ Rules
   the device refuses the update. packaging/make-installers.sh takes care of it as
   long as the key file stays the same. Keep a copy of the key in a safe place.
 * What the dialog of the update shows is the "changelog" list in kdtube.json:
-  edit it before publishing.
+  edit it before publishing, or give it to the build:
+  KDTUBE_CHANGELOG="first line|second line" packaging/make-installers.sh
