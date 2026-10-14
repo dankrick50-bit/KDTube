@@ -20,6 +20,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.menu.provide
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.menu.providers.ContextMenuProvider;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.service.SidebarService;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadFolder;
 import com.liskovsoft.smartyoutubetv2.common.prefs.AppPrefs;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
@@ -80,6 +81,7 @@ public class GeneralSettingsPresenter extends BasePresenter<Void> {
         appendHideContent(settingsPresenter);
         appendAppExitCategory(settingsPresenter);
         appendBackgroundPlaybackCategory(settingsPresenter);
+        appendDownloadFolder(settingsPresenter);
         appendScreenDimmingCategory(settingsPresenter);
         appendKeyRemappingCategory(settingsPresenter);
         appendInternetCensorship(settingsPresenter);
@@ -319,6 +321,15 @@ public class GeneralSettingsPresenter extends BasePresenter<Void> {
     private void appendBackgroundPlaybackCategory(AppDialogPresenter settingsPresenter) {
         OptionCategory category = AppDialogUtil.createBackgroundPlaybackCategory(getContext(), mPlayerData, mGeneralData);
         settingsPresenter.appendRadioCategory(category.title, category.options);
+    }
+
+    /**
+     * KDTube: where the downloads go (see DownloadFolder)
+     */
+    private void appendDownloadFolder(AppDialogPresenter settingsPresenter) {
+        settingsPresenter.appendSingleButton(UiOptionItem.from(
+                getContext().getString(R.string.download_folder) + ": " + DownloadFolder.getLabel(getContext()),
+                option -> DownloadFolder.showDialog(getContext(), null)));
     }
 
     private void appendKeyRemappingCategory(AppDialogPresenter settingsPresenter) {

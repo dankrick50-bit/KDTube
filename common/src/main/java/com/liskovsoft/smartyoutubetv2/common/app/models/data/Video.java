@@ -65,6 +65,10 @@ public final class Video {
     public String altCardImageUrl;
     public String author;
     public String badge;
+    /**
+     * The highest resolution as YouTube marks it on the tile: "8K", "4K" or null
+     */
+    public String qualityBadge;
     public String previewUrl;
     /**
      * The video is played from this file (see the downloads)
@@ -155,6 +159,7 @@ public final class Video {
         video.percentWatched = item.getPercentWatched();
         video.startTimeSeconds = item.getStartTimeSeconds();
         video.badge = item.getBadgeText();
+        video.qualityBadge = item.getQualityBadge();
         video.hasNewContent = item.hasNewContent();
         video.previewUrl = item.getVideoPreviewUrl();
         video.playlistId = item.getPlaylistId();

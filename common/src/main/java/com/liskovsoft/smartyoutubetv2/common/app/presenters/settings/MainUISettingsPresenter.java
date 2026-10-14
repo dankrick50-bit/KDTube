@@ -288,6 +288,11 @@ public class MainUISettingsPresenter extends BasePresenter<Void> {
 
     private void appendMiscCategory(AppDialogPresenter settingsPresenter) {
         List<OptionItem> options = new ArrayList<>();
+
+        // KDTube: the order of the videos in a row. The badge of the resolution is always there.
+        options.add(UiOptionItem.from(getContext().getString(R.string.high_res_first),
+                option -> mMainUIData.setHighResFirstEnabled(option.isSelected()),
+                mMainUIData.isHighResFirstEnabled()));
         
         options.add(UiOptionItem.from(getContext().getString(R.string.card_unlocalized_titles),
                 option -> {

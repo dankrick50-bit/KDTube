@@ -12,6 +12,8 @@ import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+
 import com.bumptech.glide.Glide;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
@@ -29,6 +31,8 @@ public class ComplexImageView extends RelativeLayout {
     private FrameLayout mPreviewContainer;
     private ProgressBar mProgressBar;
     private TextView mBadgeText;
+    private TextView mQualityBadge;
+    private View mQualityBadgeRow;
     private ViewGroup mProgressContainer;
     private int mPreviewWidth;
     private int mPreviewHeight;
@@ -56,6 +60,8 @@ public class ComplexImageView extends RelativeLayout {
         inflate(getContext(), R.layout.text_badge_image_view, this);
         mMainImage = findViewById(R.id.main_image);
         mBadgeText = findViewById(R.id.extra_text_badge);
+        mQualityBadge = findViewById(R.id.quality_badge);
+        mQualityBadgeRow = findViewById(R.id.quality_badge_row);
         mProgressBar = findViewById(R.id.clip_progress);
         mProgressContainer = findViewById(R.id.clip_info);
         mPreviewContainer = findViewById(R.id.preview_container);
@@ -101,6 +107,24 @@ public class ComplexImageView extends RelativeLayout {
             mBadgeText.setVisibility(View.VISIBLE);
         } else {
             mBadgeText.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    /**
+     * The highest resolution of the video in the top right corner: "8K", "4K", or null for none
+     */
+    public void setQualityBadge(String quality) {
+        if (mQualityBadge == null) {
+            return;
+        }
+
+        if (quality != null) {
+            mQualityBadge.setText(quality);
+            mQualityBadge.setBackgroundColor(ContextCompat.getColor(getContext(),
+                    "8K".equals(quality) ? R.color.quality_badge_8k : R.color.quality_badge_4k));
+            mQualityBadge.setVisibility(View.VISIBLE);
+        } else {
+            mQualityBadge.setVisibility(View.GONE);
         }
     }
 
@@ -251,6 +275,13 @@ public class ComplexImageView extends RelativeLayout {
         ViewGroup.LayoutParams lp = mProgressContainer.getLayoutParams();
         lp.width = width;
         mProgressContainer.setLayoutParams(lp);
+
+        // The badge of the resolution: top right of the same width
+        if (mQualityBadgeRow != null) {
+            ViewGroup.LayoutParams badgeRow = mQualityBadgeRow.getLayoutParams();
+            badgeRow.width = width;
+            mQualityBadgeRow.setLayoutParams(badgeRow);
+        }
     }
 
     private void setPreviewDimensions(int width, int height) {

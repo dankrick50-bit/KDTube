@@ -76,4 +76,7 @@
     <color name="scheme_modern_text_secondary">#B8C1CE</color>
     <color name="scheme_modern_accent">#4C8DFF</color>
     <color name="scheme_modern_accent_light">#9DC0FF</color>
+    <!-- KDTube: the resolution badge of the video cards -->
+    <color name="quality_badge_4k">#E61565C0</color>
+    <color name="quality_badge_8k">#E6B8860B</color>
 </resources>

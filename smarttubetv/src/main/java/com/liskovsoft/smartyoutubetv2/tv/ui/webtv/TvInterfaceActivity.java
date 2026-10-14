@@ -41,6 +41,7 @@ import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.DisplayHolde
 import com.liskovsoft.smartyoutubetv2.common.autoframerate.internal.UhdHelper;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.other.SoundEnhanceProcessor;
 import com.liskovsoft.smartyoutubetv2.common.misc.MemoryKeeper;
+import com.liskovsoft.smartyoutubetv2.common.misc.download.DownloadDialogUtil;
 import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 import com.liskovsoft.smartyoutubetv2.tv.BuildConfig;
@@ -81,6 +82,7 @@ public class TvInterfaceActivity extends Activity {
      */
     private static final int MIN_ENGINE_VERSION = 80;
     private static final Pattern ENGINE_VERSION = Pattern.compile("Chrome/(\\d+)");
+    private static final Pattern VIDEO_ID = Pattern.compile("[?&]v=([\\w-]{6,20})");
     /**
      * Back held this long opens the menu (the way back to the interface of the app)
      */
@@ -558,11 +560,23 @@ public class TvInterfaceActivity extends Activity {
             return;
         }
 
-        String[] items = {getString(R.string.tv_interface_switch_back), getString(R.string.tv_interface_reload), getString(R.string.tv_interface_close)};
+        // A video is open: it can be downloaded (the same dialog as in the player of the app)
+        String videoId = getCurrentVideoId();
+        String[] items = videoId != null ?
+                new String[] {getString(R.string.download_video), getString(R.string.tv_interface_switch_back), getString(R.string.tv_interface_reload), getString(R.string.tv_interface_close)} :
+                new String[] {getString(R.string.tv_interface_switch_back), getString(R.string.tv_interface_reload), getString(R.string.tv_interface_close)};
+        int offset = videoId != null ? 1 : 0;
 
         mMenu = new AlertDialog.Builder(this)
                 .setTitle(R.string.tv_interface_menu_title)
-                .setItems(items, (dialog, which) -> {
+                .setItems(items, (dialog, choice) -> {
+                    if (videoId != null && choice == 0) {
+                        DownloadDialogUtil.showDownloadDialog(this, videoId);
+                        return;
+                    }
+
+                    int which = choice - offset;
+
                     if (which == 0) {
                         MainUIData.instance(this).setTvInterfaceOnStartEnabled(false);
                         startMainInterface();
@@ -573,6 +587,15 @@ public class TvInterfaceActivity extends Activity {
                     }
                 })
                 .show();
+    }
+
+    /**
+     * The video the page plays or shows: #/watch?v=&lt;id&gt;
+     */
+    private String getCurrentVideoId() {
+        String url = mWebView != null ? mWebView.getUrl() : null;
+        Matcher matcher = VIDEO_ID.matcher(url != null ? url : "");
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     private void startMainInterface() {

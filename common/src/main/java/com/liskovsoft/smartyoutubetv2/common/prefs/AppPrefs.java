@@ -23,6 +23,7 @@ public class AppPrefs extends SharedPreferencesBase implements AccountChangeList
     private static final String SIDEBAR_DATA = "sidebar_data";
     private static final String VIEW_MANAGER_DATA = "view_manager_data";
     private static final String WEB_PROXY_URI = "web_proxy_uri";
+    private static final String DOWNLOAD_FOLDER = "download_folder";
     private static final String WEB_PROXY_ENABLED = "web_proxy_enabled";
     private static final String LAST_PROFILE_NAME = "last_profile_name";
     private String mBootResolution;
@@ -132,6 +133,17 @@ public class AppPrefs extends SharedPreferencesBase implements AccountChangeList
     //        putString(key, data);
     //    }
     //}
+
+    /**
+     * Where the downloads go (see DownloadFolder). Of the device, not of a profile: a folder belongs to this device.
+     */
+    public String getDownloadFolder() {
+        return getString(DOWNLOAD_FOLDER, "");
+    }
+
+    public void setDownloadFolder(String folder) {
+        putString(DOWNLOAD_FOLDER, folder != null ? folder : "");
+    }
 
     public String getWebProxyUri() {
         return getString(WEB_PROXY_URI, "");

@@ -1,5 +1,7 @@
 package com.liskovsoft.smartyoutubetv2.common.prefs;
 
+import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
+
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Build;
@@ -108,6 +110,7 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
     private int mColorSchemeIndex;
     private boolean mIsModernSchemeApplied;
     private boolean mIsTvInterfaceOnStartEnabled;
+    private boolean mIsHighResFirstEnabled;
     private int mChannelCategorySorting;
     private int mPlaylistsStyle;
     private boolean mIsUploadsOldLookEnabled;
@@ -467,6 +470,8 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
         mUiTweaks = Helpers.parseLong(split, 23, UI_TWEAK_DEFAULT);
         mIsModernSchemeApplied = Helpers.parseBoolean(split, 24, false);
         mIsTvInterfaceOnStartEnabled = Helpers.parseBoolean(split, 25, false);
+        mIsHighResFirstEnabled = Helpers.parseBoolean(split, 26, true);
+        VideoGroup.setHighResFirstEnabled(mIsHighResFirstEnabled);
 
         // The scheme is newer than the stored choice: switch to it once, the user may switch back afterwards
         if (!mIsModernSchemeApplied) {
@@ -511,6 +516,19 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
     /**
      * Start with the YouTube TV interface (the one of the PC edition) instead of the interface of the app
      */
+    /**
+     * 8K and 4K videos first in each row (see VideoGroup)
+     */
+    public boolean isHighResFirstEnabled() {
+        return mIsHighResFirstEnabled;
+    }
+
+    public void setHighResFirstEnabled(boolean enable) {
+        mIsHighResFirstEnabled = enable;
+        VideoGroup.setHighResFirstEnabled(enable);
+        persistState();
+    }
+
     public boolean isTvInterfaceOnStartEnabled() {
         return mIsTvInterfaceOnStartEnabled;
     }
@@ -532,7 +550,8 @@ public class MainUIData extends DataChangeBase implements ProfileChangeListener 
                 mIsUploadsOldLookEnabled, mIsUploadsAutoLoadEnabled, mCardTextScrollSpeed, mMenuItems, mTopButtons,
                 null, mThumbQuality, mIsCardMultilineSubtitleEnabled, Helpers.mergeList(mMenuItemsOrdered),
                 mIsChannelsFilterEnabled, mIsChannelSearchBarEnabled, mIsPinnedChannelRowsEnabled, mCardPreviewType,
-                mIsUnlocalizedTitlesEnabled, mUiTweaks, mIsModernSchemeApplied, mIsTvInterfaceOnStartEnabled));
+                mIsUnlocalizedTitlesEnabled, mUiTweaks, mIsModernSchemeApplied, mIsTvInterfaceOnStartEnabled,
+                mIsHighResFirstEnabled));
     }
 
     public static class ColorScheme {

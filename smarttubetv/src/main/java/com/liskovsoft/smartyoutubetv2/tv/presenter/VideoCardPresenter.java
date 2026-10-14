@@ -135,6 +135,7 @@ public class VideoCardPresenter extends LongClickPresenter {
                 video.isShorts ? context.getString(R.string.header_shorts).toUpperCase() :
                 video.badge
         );
+        cardView.setQualityBadge(video.qualityBadge);
         cardView.setBadgeColor(video.hasNewContent || video.isLive || video.isUpcoming ?
                 ContextCompat.getColor(context, R.color.dark_red) : ContextCompat.getColor(context, R.color.black));
 

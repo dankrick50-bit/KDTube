@@ -60,6 +60,13 @@
     <!-- Increase player time text size -->
     <dimen name="lb_playback_controls_time_text_size">16sp</dimen>
 
+    <!-- KDTube: smaller player buttons (the row also shrinks to fit the screen, see tweaks/ControlBar). Old values: 32dp, 48dp, 48dp -->
+    <dimen name="lb_control_icon_width">28dp</dimen>
+    <dimen name="lb_control_icon_height">28dp</dimen>
+    <dimen name="lb_control_button_secondary_diameter">40dp</dimen>
+    <dimen name="lb_control_button_secondary_height">40dp</dimen>
+    <dimen name="lb_playback_controls_child_margin_default">36dp</dimen>
+
     <!-- Multiline description in the player -->
     <integer name="lb_details_description_subtitle_max_lines">2</integer>
     <integer name="lb_details_description_title_max_lines">2</integer>

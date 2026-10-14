@@ -29,6 +29,7 @@ class ControlBar extends LinearLayout {
         public void onChildFocusedListener(View child, View focused);
     }
 
+    private static final float MIN_BUTTON_SCALE = 0.6f;
     private int mChildMarginFromCenter;
     private OnChildFocusedListener mOnChildFocusedListener;
     // Can't set to static. Because we have two control bars.
@@ -132,12 +133,34 @@ class ControlBar extends LinearLayout {
             return;
         }
 
+        // MOD: the row fits the screen. With many buttons the distance from center to center is made
+        // smaller, and when even touching buttons won't fit, they are drawn smaller (not below 60%).
+        int marginFromCenter = mChildMarginFromCenter;
+        float scale = 1f;
+        int count = getChildCount();
+        if (count > 1) {
+            int childWidth = getChildAt(0).getMeasuredWidth();
+            int fitting = (getAvailableWidth(widthMeasureSpec) - childWidth) / (count - 1);
+            if (fitting < marginFromCenter) {
+                marginFromCenter = Math.max(fitting, 1);
+                if (childWidth > 0 && marginFromCenter < childWidth) {
+                    scale = Math.max(MIN_BUTTON_SCALE, (float) marginFromCenter / childWidth);
+                    marginFromCenter = Math.max(marginFromCenter, Math.round(childWidth * scale));
+                }
+            }
+        }
+        for (int i = 0; i < count; i++) {
+            View child = getChildAt(i);
+            child.setScaleX(scale);
+            child.setScaleY(scale);
+        }
+
         int totalExtraMargin = 0;
         for (int i = 0; i < getChildCount() - 1; i++) {
             View first = getChildAt(i);
             View second = getChildAt(i+1);
             int measuredWidth = first.getMeasuredWidth() + second.getMeasuredWidth();
-            int marginStart = mChildMarginFromCenter - measuredWidth / 2;
+            int marginStart = marginFromCenter - measuredWidth / 2;
             LayoutParams lp = (LayoutParams) second.getLayoutParams();
             int extraMargin = marginStart - lp.getMarginStart();
             lp.setMarginStart(marginStart);
@@ -145,6 +168,16 @@ class ControlBar extends LinearLayout {
             totalExtraMargin += extraMargin;
         }
         setMeasuredDimension(getMeasuredWidth() + totalExtraMargin, getMeasuredHeight());
+    }
+
+    /**
+     * The width the row may take: what the parent offers, or the screen when the parent doesn't limit it
+     */
+    private int getAvailableWidth(int widthMeasureSpec) {
+        int screen = getResources().getDisplayMetrics().widthPixels;
+        int offered = MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED ? MeasureSpec.getSize(widthMeasureSpec) : 0;
+        int available = offered > 0 ? Math.min(offered, screen) : screen;
+        return Math.max(available - getPaddingLeft() - getPaddingRight(), 1);
     }
 
     private void setFocusIndex(int index) {

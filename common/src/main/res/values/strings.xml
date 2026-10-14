@@ -776,6 +776,15 @@
     <string name="download_not_supported">Downloads need Android 7.0 or newer</string>
     <string name="download_no_formats">This video can\'t be downloaded</string>
     <string name="download_no_space">Not enough free space (%s left)</string>
+    <string name="download_folder">Download folder</string>
+    <string name="download_folder_device">This device</string>
+    <string name="download_folder_removable">USB drive / SD card</string>
+    <string name="download_folder_app">folder of the app</string>
+    <string name="download_folder_other">Choose another folder…</string>
+    <string name="download_folder_set">Downloads go to: %s</string>
+    <string name="download_folder_no_picker">This device has no folder picker: choose one of the folders of the list</string>
+    <string name="download_folder_lost">The download folder can\'t be used anymore (removed, or the access to it). Choose it again: Settings > General > Download folder</string>
+    <string name="download_folder_change">Folder: %s (change)</string>
     <string name="download_grant_storage">Allow the access to the storage and press the button again</string>
     <string name="cast_to_device">Play on another device</string>
     <string name="cast_searching">Looking for devices…</string>
@@ -808,6 +817,7 @@
     <string name="tv_interface_reload">Reload</string>
     <string name="tv_interface_close">Close</string>
     <string name="tv_interface_menu_title">KDTube (hold Back to open this menu)</string>
+    <string name="high_res_first">8K and 4K videos first in each row</string>
     <string name="playback_too_heavy">%s is too much for this device: switching to a smoother stream</string>
     <string name="tv_interface_no_engine">The web engine of this device (Android System WebView) is missing or too old for the YouTube TV interface</string>
     <string name="virtual_surround_desc">5.1 / 7.1 sound (Dolby, DTS) on two speakers or headphones. Leave off with a surround system</string>

@@ -57,14 +57,25 @@ fi
 unzip -l "$RELEASE_DIR/KDTube_${VERSION}_universal.apk" | grep -q "libkdtube_core.so" ||
     fail "The release was built without the native core: build it with -PrustCore (see the top of this file and rust/README.md)"
 
-# One version in the folder: what the run before left there goes (the files this script makes, nothing else)
+# One version in the folder, and every version kept: what the run before left there moves to
+# Archive/<version>-<stamp> (for a roll back). Only the files this script makes; nothing is deleted.
 if [ -d "$OUT" ]; then
-    find "$OUT" -maxdepth 3 -type f \( -name 'KDTube-*.apk' -o -name 'KDTube-*.exe' -o -name 'KDTube-*.deb' -o -name 'KDTube-*.tar.gz' \
-        -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'kdtube-pc*' -o -name 'README.txt' -o -name 'README.md' \) -delete
+    PREV_VERSION="$(grep -o '"[0-9][0-9.]*": {' "$OUT/Updates/kdtube.json" 2>/dev/null | head -n 1 | cut -d'"' -f2)"
+    PREV_STAMP="$(ls "$OUT"/Android/KDTube-android-v*.apk 2>/dev/null | grep -o '[0-9]\{8\}-[0-9]\{4\}' | head -n 1)"
+    ARCHIVE="$OUT/Archive/${PREV_VERSION:-previous}-${PREV_STAMP:-$(date +%Y%m%d-%H%M%S)}"
+    find "$OUT" -maxdepth 3 -path "$OUT/Archive" -prune -o -type f \( -name 'KDTube-*.apk' -o -name 'KDTube-*.exe' -o -name 'KDTube-*.deb' \
+        -o -name 'KDTube-*.tar.gz' -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'kdtube-pc*' -o -name 'README.txt' -o -name 'README.md' \) -print |
+    while IFS= read -r file; do
+        relative="${file#"$OUT"/}"
+        mkdir -p "$ARCHIVE/$(dirname "$relative")"
+        mv "$file" "$ARCHIVE/$relative"
+    done
+    if [ -d "$ARCHIVE" ]; then echo "== the previous version kept in ${ARCHIVE#"$ROOT"/}"; fi
 fi
-# The same for the signed files of other versions: the TV installers pack what is in that folder
+# The signed files of other versions leave the folder the TV installers pack (kept next to it)
 if [ -d "$WORK/apk" ]; then
-    find "$WORK/apk" -maxdepth 1 -type f -name 'KDTube-*' ! -name "KDTube-$VERSION-*" -delete
+    mkdir -p "$WORK/apk-archive"
+    find "$WORK/apk" -maxdepth 1 -type f -name 'KDTube-*' ! -name "KDTube-$VERSION-*" -exec mv {} "$WORK/apk-archive/" \;
 fi
 mkdir -p "$WORK/apk" "$OUT/Android/From-a-PC" "$OUT/FireOS/Fire-TV-Stick-4K" "$OUT/FireOS/Fire-HD-10-2023" "$OUT/Windows" "$OUT/Ubuntu" "$OUT/Updates"
 

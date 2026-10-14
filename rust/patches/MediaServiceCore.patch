@@ -1,3 +1,20 @@
+diff --git a/mediaserviceinterfaces/src/main/java/com/liskovsoft/mediaserviceinterfaces/data/MediaItem.java b/mediaserviceinterfaces/src/main/java/com/liskovsoft/mediaserviceinterfaces/data/MediaItem.java
+index ed0ab24c..3f171c3c 100644
+--- a/mediaserviceinterfaces/src/main/java/com/liskovsoft/mediaserviceinterfaces/data/MediaItem.java
++++ b/mediaserviceinterfaces/src/main/java/com/liskovsoft/mediaserviceinterfaces/data/MediaItem.java
+@@ -50,6 +50,12 @@ public interface MediaItem {
+      */
+     long getDurationMs();
+     String getBadgeText();
++    /**
++     * The highest resolution of the video as YouTube marks it on its tile: "8K", "4K" or null (1440p or less, or unknown)
++     */
++    default String getQualityBadge() {
++        return null;
++    }
+     String getProductionDate();
+     long getPublishedDate();
+     String getCardImageUrl();
 diff --git a/youtubeapi/src/main/assets/nsigsolver/lazy.ast.js b/youtubeapi/src/main/assets/nsigsolver/lazy.ast.js
 new file mode 100644
 index 00000000..f19db132
@@ -2166,3 +2183,84 @@ index 3df704ea..1b785bdd 100644
          v8Runtime = V8.createV8Runtime()
      }
  
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonHelper.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonHelper.kt
+index 01d79fdd..4723e77c 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonHelper.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonHelper.kt
+@@ -441,3 +441,15 @@ internal fun PopupActionItem.getOverlayPanelRenderer() = popup?.overlaySectionRe
+ 
+ internal fun OverlayPanelRenderer.getCommandExecutorCommand() =
+     content?.overlayPanelItemListRenderer?.items?.firstNotNullOfOrNull { it?.compactLinkRenderer?.serviceEndpoint?.commandExecutorCommand }
++
++// MOD (KDTube): the highest resolution a video has, as YouTube marks it on its tile. Only 4K and 8K are marked
++// (no mark: 1440p or less). Read from the list itself: no request per video.
++private val QUALITY_LABELS = listOf("8K", "4K")
++private fun pickQualityLabel(labels: List<String?>?): String? =
++    QUALITY_LABELS.firstOrNull { quality -> labels?.any { it.equals(quality, ignoreCase = true) } == true }
++internal fun TileItem.getQualityBadge() = pickQualityLabel(metadata?.tileMetadataRenderer?.lines
++    ?.flatMap { it?.lineRenderer?.items ?: emptyList() }?.map { it?.lineItemRenderer?.badge?.metadataBadgeRenderer?.label })
++internal fun VideoItem.getQualityBadge() = pickQualityLabel(badges?.map { it?.metadataBadgeRenderer?.label })
++internal fun LockupItem.getQualityBadge() = pickQualityLabel(metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel
++    ?.metadataRows?.flatMap { it?.badges ?: emptyList() }?.map { it?.badgeViewModel?.badgeText })
++internal fun ItemWrapper.getQualityBadge() = getTileItem()?.getQualityBadge() ?: getVideoItem()?.getQualityBadge() ?: getLockupItem()?.getQualityBadge()
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonItems.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonItems.kt
+index 0dabb474..dd661917 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonItems.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/gen/CommonItems.kt
+@@ -536,11 +536,20 @@ internal data class LockupItem(
+                     val metadataRows: List<MetadataRow?>?
+                 ) {
+                     data class MetadataRow(
+-                        val metadataParts: List<MetadataPart?>?
++                        val metadataParts: List<MetadataPart?>?,
++                        val badges: List<RowBadge?>? // MOD: e.g. "8K", "4K" (KDTube: the resolution badge)
+                     ) {
+                         data class MetadataPart(
+                             val text: TextItem?
+                         )
++                        data class RowBadge(
++                            val badgeViewModel: BadgeViewModel?
++                        ) {
++                            data class BadgeViewModel(
++                                val badgeText: String?,
++                                val badgeStyle: String?
++                            )
++                        }
+                     }
+                 }
+             }
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/BaseMediaItem.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/BaseMediaItem.kt
+index 7cb5ab35..04c612a5 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/BaseMediaItem.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/BaseMediaItem.kt
+@@ -38,6 +38,7 @@ open class BaseMediaItem : MediaItem {
+ 
+     protected open val reloadPageKeyItem: String? = null
+     protected open val badgeTextItem: String? = null
++    protected open val qualityBadgeItem: String? = null
+     protected open val typeItem: Int = MediaItem.TYPE_VIDEO
+     protected open val videoIdItem: String? = null
+     protected open val titleItem: String? = null
+@@ -150,6 +151,10 @@ open class BaseMediaItem : MediaItem {
+         return durationMsItem
+     }
+ 
++    override fun getQualityBadge(): String? {
++        return qualityBadgeItem
++    }
++
+     override fun getBadgeText(): String? {
+         return lengthText ?: badgeTextItem
+     }
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/MediaItemImpl.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/MediaItemImpl.kt
+index dc178cf5..b0201308 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/MediaItemImpl.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/common/models/impl/mediaitem/MediaItemImpl.kt
+@@ -32,6 +32,7 @@ internal class WrapperMediaItem(private val itemWrapper: ItemWrapper): BaseMedia
+     override val playlistIdItem by lazy { itemWrapper.getPlaylistId() }
+     override val playlistIndexItem by lazy { itemWrapper.getPlaylistIndex() }
+     override val badgeTextItem by lazy { itemWrapper.getBadgeText() }
++    override val qualityBadgeItem by lazy { itemWrapper.getQualityBadge() }
+     override val lengthText by lazy { itemWrapper.getLengthText() }
+     override val channelIdItem by lazy { itemWrapper.getChannelId() }
+     override val playlistParamsItem by lazy { itemWrapper.getChannelParams() }

@@ -9,23 +9,26 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.os.StatFs;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 
 import androidx.annotation.RequiresApi;
 
 import com.liskovsoft.sharedutils.helpers.PermissionHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
+import com.liskovsoft.smartyoutubetv2.common.R;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 
 /**
- * The file that is being written.<br/>
- * Android 10+: Download/KDTube through the media store (no permission needed).<br/>
+ * The file that is being written, in the folder of the settings (see DownloadFolder).<br/>
+ * Default: Android 10+: Download/KDTube through the media store (no permission needed).
  * Older: the same folder directly (storage permission). If there's no shared storage: the folder of the app.
  */
 public class DownloadTarget {
@@ -48,12 +51,25 @@ public class DownloadTarget {
      */
     public static DownloadTarget create(Context context, String name, String extension, String mimeType) throws IOException {
         String fileName = sanitize(name) + "." + extension;
+        String folder = DownloadFolder.get(context);
 
-        if (Build.VERSION.SDK_INT >= 29) {
-            return new DownloadTarget(context, createMediaStoreItem(context, fileName, mimeType).toString());
+        if (folder.startsWith(CONTENT_SCHEME)) {
+            return new DownloadTarget(context, createDocument(context, Uri.parse(folder), fileName).toString());
         }
 
-        File dir = getLegacyDir(context);
+        if (Build.VERSION.SDK_INT >= 29 && folder.startsWith(DownloadFolder.MEDIA_STORE_PREFIX)) {
+            String[] parts = folder.substring(DownloadFolder.MEDIA_STORE_PREFIX.length()).split(":");
+            String volume = parts[0];
+            String base = parts.length > 1 ? parts[1] : DownloadFolder.BASE_DOWNLOAD;
+            return new DownloadTarget(context, createMediaStoreItem(context, fileName, mimeType, volume, base).toString());
+        }
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            return new DownloadTarget(context, createMediaStoreItem(context, fileName, mimeType,
+                    MediaStore.VOLUME_EXTERNAL_PRIMARY, DownloadFolder.BASE_DOWNLOAD).toString());
+        }
+
+        File dir = folder.startsWith("/") ? getFolderDir(context, folder) : getLegacyDir(context);
         File file = new File(dir, fileName);
 
         for (int i = 2; file.exists(); i++) {
@@ -71,6 +87,10 @@ public class DownloadTarget {
      * @return true if the user should grant the access to the storage first (the request is shown)
      */
     public static boolean requestPermissionIfNeeded(Context context) {
+        if (!DownloadFolder.get(context).isEmpty()) {
+            return false; // the folder of the app, or one chosen with the picker
+        }
+
         if (Build.VERSION.SDK_INT >= 29 || Build.VERSION.SDK_INT < 23 || PermissionHelpers.hasStoragePermissions(context)) {
             return false;
         }
@@ -87,8 +107,15 @@ public class DownloadTarget {
      * @return free space where the files are stored, -1 if unknown
      */
     public static long getFreeBytes(Context context) {
+        String folder = DownloadFolder.get(context);
+
+        if (folder.startsWith(CONTENT_SCHEME) || folder.startsWith(DownloadFolder.MEDIA_STORE_PREFIX)) {
+            return -1; // another volume: not known here
+        }
+
         try {
-            File dir = Build.VERSION.SDK_INT >= 29 ? Environment.getExternalStorageDirectory() : getLegacyDir(context);
+            File dir = folder.startsWith("/") ? getFolderDir(context, folder) :
+                    Build.VERSION.SDK_INT >= 29 ? Environment.getExternalStorageDirectory() : getLegacyDir(context);
             return new StatFs(dir.getAbsolutePath()).getAvailableBytes();
         } catch (IOException | RuntimeException e) {
             return -1;
@@ -157,7 +184,7 @@ public class DownloadTarget {
     public void commit() {
         closeDescriptor();
 
-        if (isContent() && Build.VERSION.SDK_INT >= 29) {
+        if (isContent() && !isDocument() && Build.VERSION.SDK_INT >= 29) {
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.IS_PENDING, 0);
 
@@ -173,13 +200,15 @@ public class DownloadTarget {
         closeDescriptor();
 
         try {
-            if (isContent()) {
+            if (isDocument()) {
+                DocumentsContract.deleteDocument(mContext.getContentResolver(), Uri.parse(mLocation));
+            } else if (isContent()) {
                 mContext.getContentResolver().delete(Uri.parse(mLocation), null, null);
             } else {
                 //noinspection ResultOfMethodCallIgnored
                 new File(mLocation).delete();
             }
-        } catch (RuntimeException e) {
+        } catch (FileNotFoundException | RuntimeException e) {
             Log.e(TAG, "Can't delete the file: %s", e.getMessage());
         }
     }
@@ -189,7 +218,9 @@ public class DownloadTarget {
             return new File(mLocation).exists();
         }
 
-        try (Cursor cursor = mContext.getContentResolver().query(Uri.parse(mLocation), new String[]{MediaStore.MediaColumns._ID}, null, null, null)) {
+        String column = isDocument() ? DocumentsContract.Document.COLUMN_DOCUMENT_ID : MediaStore.MediaColumns._ID;
+
+        try (Cursor cursor = mContext.getContentResolver().query(Uri.parse(mLocation), new String[]{column}, null, null, null)) {
             return cursor != null && cursor.moveToFirst();
         } catch (RuntimeException e) {
             return false;
@@ -201,7 +232,9 @@ public class DownloadTarget {
             return new File(mLocation).length();
         }
 
-        try (Cursor cursor = mContext.getContentResolver().query(Uri.parse(mLocation), new String[]{MediaStore.MediaColumns.SIZE}, null, null, null)) {
+        String column = isDocument() ? DocumentsContract.Document.COLUMN_SIZE : MediaStore.MediaColumns.SIZE;
+
+        try (Cursor cursor = mContext.getContentResolver().query(Uri.parse(mLocation), new String[]{column}, null, null, null)) {
             return cursor != null && cursor.moveToFirst() ? cursor.getLong(0) : 0;
         } catch (RuntimeException e) {
             return 0;
@@ -233,18 +266,34 @@ public class DownloadTarget {
         }
     }
 
+    /**
+     * @param volume of the media store: the device (external_primary), a USB drive, an SD card
+     * @param base Download, or Movies (audio only goes to Music then: the media store keeps the kinds apart)
+     */
     @RequiresApi(29)
-    private static Uri createMediaStoreItem(Context context, String fileName, String mimeType) throws IOException {
+    private static Uri createMediaStoreItem(Context context, String fileName, String mimeType, String volume, String base) throws IOException {
+        boolean isAudio = mimeType != null && mimeType.startsWith("audio/");
+        Uri collection;
+        String dir;
+
+        if (DownloadFolder.BASE_MOVIES.equals(base)) {
+            collection = isAudio ? MediaStore.Audio.Media.getContentUri(volume) : MediaStore.Video.Media.getContentUri(volume);
+            dir = isAudio ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES;
+        } else {
+            collection = MediaStore.Downloads.getContentUri(volume);
+            dir = Environment.DIRECTORY_DOWNLOADS;
+        }
+
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
         values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER_NAME);
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, dir + "/" + FOLDER_NAME);
         values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
         Uri uri;
 
         try {
-            uri = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            uri = context.getContentResolver().insert(collection, values);
         } catch (RuntimeException e) {
             throw new IOException("Can't create a file in the Downloads folder", e);
         }
@@ -254,6 +303,46 @@ public class DownloadTarget {
         }
 
         return uri;
+    }
+
+    /**
+     * A file in a folder chosen with the folder picker. NOTE: "application/octet-stream": with the real type the picker
+     * adds an extension of its choice to the name (".mp4.m4a").
+     */
+    private static Uri createDocument(Context context, Uri tree, String fileName) throws IOException {
+        try {
+            Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+            Uri uri = DocumentsContract.createDocument(context.getContentResolver(), parent, "application/octet-stream", fileName);
+
+            if (uri != null) {
+                return uri;
+            }
+        } catch (FileNotFoundException | RuntimeException e) {
+            Log.e(TAG, "Can't create the file in the chosen folder: %s", e.getMessage());
+        }
+
+        // The folder is gone, or the access to it
+        throw new IOException(context.getString(R.string.download_folder_lost));
+    }
+
+    /**
+     * The folder of the app on a removable volume (Android 9 and older)
+     */
+    private static File getFolderDir(Context context, String path) throws IOException {
+        File dir = new File(path);
+
+        if ((!dir.isDirectory() && !dir.mkdirs()) || !dir.canWrite()) {
+            throw new IOException(context.getString(R.string.download_folder_lost));
+        }
+
+        return dir;
+    }
+
+    /**
+     * A file of the folder picker (not of the media store)
+     */
+    private boolean isDocument() {
+        return isContent() && Build.VERSION.SDK_INT >= 19 && DocumentsContract.isDocumentUri(mContext, Uri.parse(mLocation));
     }
 
     private static File getLegacyDir(Context context) throws IOException {

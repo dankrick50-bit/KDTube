@@ -102,18 +102,22 @@
                         android:layout_marginLeft="@dimen/lb_playback_transport_controlbar_margin_start"
                         tools:ignore="RtlHardcoded" >
 
+            <!-- KDTube: the buttons end where the info on the right begins: they shrink to fit (tweaks/ControlBar) -->
             <FrameLayout
                 android:id="@+id/controls_dock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_alignParentStart="true"
+                android:layout_toStartOf="@+id/additional_info"
             />
 
-            <RelativeLayout android:id="@+id/additional_info"
+            <!-- KDTube: a column that is as wide as its text (a RelativeLayout here took the whole row) -->
+            <LinearLayout android:id="@+id/additional_info"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:gravity="end"
                             android:layoutDirection="ltr"
-                            android:layout_gravity="bottom"
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
                             android:focusable="false" >
@@ -128,9 +132,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_alignParentEnd="true"
-                    android:layout_below="@+id/quality_info"
                     style="?attr/playbackControlsTimeStyle" />
-            </RelativeLayout>
+            </LinearLayout>
         </RelativeLayout>
 
         <com.liskovsoft.smartyoutubetv2.tv.ui.mod.leanback.misc.SeekBar
@@ -145,18 +148,22 @@
                         android:layoutDirection="ltr"
                         android:layout_marginLeft="@dimen/lb_playback_transport_controlbar_margin_start"
                         tools:ignore="RtlHardcoded" >
+            <!-- KDTube: the buttons end where the time on the right begins: they shrink to fit (tweaks/ControlBar) -->
             <FrameLayout
                 android:id="@+id/secondary_controls_dock"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_alignParentStart="true" >
+                android:layout_alignParentStart="true"
+                android:layout_toStartOf="@+id/time_info" >
             </FrameLayout>
 
-            <RelativeLayout android:id="@+id/time_info"
+            <!-- KDTube: a column that is as wide as its text (a RelativeLayout here took the whole row) -->
+            <LinearLayout android:id="@+id/time_info"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:gravity="end"
                             android:layoutDirection="ltr"
-                            android:layout_gravity="bottom"
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
                             android:focusable="false" >
@@ -167,12 +174,11 @@
                     android:layout_alignParentEnd="true"
                     style="?attr/playbackControlsTimeStyle" />
 
-                <RelativeLayout android:id="@+id/current_time_wrapper"
+                <LinearLayout android:id="@+id/current_time_wrapper"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:orientation="horizontal"
                                 android:layoutDirection="ltr"
-                                android:layout_alignParentEnd="true"
-                                android:layout_below="@+id/ending_time"
                                 android:focusable="false" >
                     <TextView
                         android:id="@+id/current_time"
@@ -195,11 +201,10 @@
                         android:id="@+id/total_time"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_alignParentEnd="true"
                         android:layout_marginStart="@dimen/lb_playback_transport_time_margin"
                         style="?attr/playbackControlsTimeStyle" />
-                </RelativeLayout>
-            </RelativeLayout>
+                </LinearLayout>
+            </LinearLayout>
         </RelativeLayout>
 
 

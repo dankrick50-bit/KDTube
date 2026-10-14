@@ -96,6 +96,43 @@ public class VideoGroup {
         return videoGroup;
     }
 
+    /**
+     * 8K and 4K videos before the others of the same page, in the order YouTube gave them otherwise
+     */
+    private static volatile boolean sIsHighResFirstEnabled = true;
+
+    public static void setHighResFirstEnabled(boolean enable) {
+        sIsHighResFirstEnabled = enable;
+    }
+
+    private static List<MediaItem> ordered(List<MediaItem> items) {
+        if (!sIsHighResFirstEnabled || items.size() < 2) {
+            return items;
+        }
+
+        List<MediaItem> result = new ArrayList<>(items.size());
+
+        for (String quality : new String[] {"8K", "4K"}) {
+            for (MediaItem item : items) {
+                if (item != null && quality.equals(item.getQualityBadge())) {
+                    result.add(item);
+                }
+            }
+        }
+
+        if (result.isEmpty()) {
+            return items;
+        }
+
+        for (MediaItem item : items) {
+            if (item == null || item.getQualityBadge() == null || !("8K".equals(item.getQualityBadge()) || "4K".equals(item.getQualityBadge()))) {
+                result.add(item);
+            }
+        }
+
+        return result;
+    }
+
     public static VideoGroup from(MediaGroup mediaGroup, BrowseSection section, int groupPosition) {
         VideoGroup videoGroup = new VideoGroup();
         videoGroup.mSection = section;
@@ -117,7 +154,7 @@ public class VideoGroup {
             return videoGroup;
         }
 
-        for (MediaItem item : mediaGroup.getMediaItems()) {
+        for (MediaItem item : ordered(mediaGroup.getMediaItems())) {
             Video video = Video.from(item);
 
             videoGroup.add(video);
@@ -138,7 +175,7 @@ public class VideoGroup {
             return baseGroup;
         }
 
-        for (MediaItem item : mediaGroup.getMediaItems()) {
+        for (MediaItem item : ordered(mediaGroup.getMediaItems())) {
             Video video = Video.from(item);
 
             baseGroup.add(video);

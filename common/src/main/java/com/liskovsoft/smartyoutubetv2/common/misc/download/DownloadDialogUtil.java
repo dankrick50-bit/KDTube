@@ -1,6 +1,8 @@
 package com.liskovsoft.smartyoutubetv2.common.misc.download;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.annotation.Nullable;
 
@@ -11,6 +13,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionItem;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
+import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -100,12 +103,57 @@ public class DownloadDialogUtil {
             return;
         }
 
+        // Where it goes, and the way to change it
+        if (active == null && video.localUri == null) {
+            items.add(UiOptionItem.from(context.getString(R.string.download_folder_change, DownloadFolder.getLabel(context)),
+                    optionItem -> {
+                        dialog.closeDialog();
+                        // Back here with the new folder in the line
+                        DownloadFolder.showDialog(context, () -> showDownloadDialog(context, video, formatInfo, audioLanguage));
+                    }));
+        }
+
         if (items.size() == 1) {
             items.add(UiOptionItem.from(context.getString(R.string.cancel_dialog), optionItem -> dialog.closeDialog()));
         }
 
         dialog.appendStringsCategory(context.getString(R.string.download_video), items);
         dialog.showDialog(context.getString(R.string.download_video));
+    }
+
+    /**
+     * The same dialog for a video known by its id only (the YouTube TV interface): its formats are loaded first.
+     */
+    public static void showDownloadDialog(Context context, String videoId) {
+        if (videoId == null) {
+            return;
+        }
+
+        MessageHelpers.showMessage(context, R.string.wait_data_loading);
+        Handler handler = new Handler(Looper.getMainLooper());
+
+        new Thread(() -> {
+            MediaItemFormatInfo formatInfo = null;
+
+            try {
+                formatInfo = YouTubeServiceManager.instance().getMediaItemService().getFormatInfo(videoId);
+            } catch (RuntimeException e) {
+                // shown below
+            }
+
+            MediaItemFormatInfo info = formatInfo;
+            handler.post(() -> {
+                if (info == null || info.isUnplayable()) {
+                    MessageHelpers.showLongMessage(context, R.string.download_no_formats);
+                    return;
+                }
+
+                Video video = Video.from(videoId);
+                video.title = info.getTitle();
+                video.author = info.getAuthor();
+                showDownloadDialog(context, video, info, null);
+            });
+        }, "kdtube-download-info").start();
     }
 
     private static String getTitle(Context context, DownloadOption option) {

@@ -71,6 +71,13 @@ public class ComplexImageCardView extends ImageCardView {
     }
 
     /**
+     * The highest resolution of the video, top right ("8K", "4K" or null)
+     */
+    public void setQualityBadge(String quality) {
+        mComplexImageView.setQualityBadge(mIsBadgeEnabled ? quality : null);
+    }
+
+    /**
      * Sets the badge text.
      */
     public void setBadgeText(String text) {
