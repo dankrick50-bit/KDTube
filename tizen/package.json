@@ -1,0 +1,21 @@
+{
+  "name": "kdtube-tizen",
+  "appName": "KDTube",
+  "version": "32.67.0",
+  "description": "YouTube's TV interface without adverts, sponsored parts skipped, the best resolution of the screen. Red button: settings.",
+  "packageType": "mods",
+  "websiteURL": "https://www.youtube.com/tv",
+  "main": "dist/userScript.js",
+  "keys": [
+    "ColorF0Red",
+    "MediaPlayPause",
+    "MediaPlay",
+    "MediaPause",
+    "MediaStop",
+    "MediaFastForward",
+    "MediaRewind",
+    "MediaTrackNext",
+    "MediaTrackPrevious"
+  ],
+  "license": "MIT"
+}

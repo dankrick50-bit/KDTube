@@ -514,7 +514,9 @@
       if (!levels.length) return;
       // NOTE: the page is drawn one to one, its size is in the pixels of the display.
       // A wide picture on a taller screen (a tablet) is as high as the width allows, not as the screen.
-      var needed = Math.min(window.innerHeight, window.innerWidth * 9 / 16) * 0.92;
+      // settings.videoScale: pixels of the panel per unit of the page, where the page isn't drawn one to one
+      // (a 4K Samsung TV lays the page out 1920 wide)
+      var needed = Math.min(window.innerHeight, window.innerWidth * 9 / 16) * 0.92 * (Number(settings.videoScale) || 1);
       var choice = levels[0];
       for (var i = 0; i < levels.length; i++) {
         if (LEVEL_HEIGHTS[levels[i]] >= needed) choice = levels[i];
