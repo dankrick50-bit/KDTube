@@ -64,7 +64,8 @@ if [ -d "$OUT" ]; then
     PREV_STAMP="$(ls "$OUT"/Android/KDTube-android-v*.apk 2>/dev/null | grep -o '[0-9]\{8\}-[0-9]\{4\}' | head -n 1)"
     ARCHIVE="$OUT/Archive/${PREV_VERSION:-previous}-${PREV_STAMP:-$(date +%Y%m%d-%H%M%S)}"
     find "$OUT" -maxdepth 3 -path "$OUT/Archive" -prune -o -type f \( -name 'KDTube-*.apk' -o -name 'KDTube-*.exe' -o -name 'KDTube-*.deb' \
-        -o -name 'KDTube-*.tar.gz' -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'kdtube-pc*' -o -name 'README.txt' -o -name 'README.md' \) -print |
+        -o -name 'KDTube-*.tar.gz' -o -name 'kdtube_*.apk' -o -name 'kdtube.json' -o -name 'kdtube-pc*' -o -name 'README.txt' -o -name 'README.md' \
+        -o -name 'userScript.js' -o -name 'package.json' \) -print |
     while IFS= read -r file; do
         relative="${file#"$OUT"/}"
         mkdir -p "$ARCHIVE/$(dirname "$relative")"
@@ -80,6 +81,12 @@ fi
 mkdir -p "$WORK/apk" "$OUT/Android/From-a-PC" "$OUT/FireOS/Fire-TV-Stick-4K" "$OUT/FireOS/Fire-HD-10-2023" "$OUT/Windows" "$OUT/Ubuntu" "$OUT/Updates"
 
 echo "== KDTube $VERSION ($STAMP)"
+# Samsung TVs: the TizenBrew module (tizen/), with a copy here; TVs get it from the repository after "git push"
+echo "== Samsung TV module"
+node "$ROOT/packaging/tizen/build-tizen.js" || fail "The Samsung TV module didn't build"
+mkdir -p "$OUT/SamsungTV/dist"
+cp "$ROOT/tizen/package.json" "$ROOT/tizen/README.md" "$OUT/SamsungTV/"
+cp "$ROOT/tizen/dist/userScript.js" "$OUT/SamsungTV/dist/"
 echo "== signing"
 for abi in arm64-v8a armeabi-v7a x86 universal; do
     "$JAVA" -jar "$(win "$APKSIGNER_JAR")" sign --ks "$(win "$KEYSTORE")" --ks-key-alias "$KEY_ALIAS" --ks-pass "file:$(win "$KEYSTORE_PASS")" \
