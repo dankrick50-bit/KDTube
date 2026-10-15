@@ -239,6 +239,20 @@ public class TvInterfaceActivity extends Activity {
             // the modes can't be read: the size of the interface
         }
 
+        // A TV box on a screen below 4K (a 1080p TV, a monitor): the stream may still be the 4K one the chip
+        // decodes. Scaled down to the screen it has more detail than the 1080p stream (the player of the app does
+        // the same). Not more than 4K: 8K on such a screen costs memory and shows nothing more.
+        if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK) && height < 2160) {
+            for (String mimeType : new String[] {"video/av01", "video/x-vnd.on2.vp9"}) {
+                int[] size = getHardwareMaxSize(mimeType);
+
+                if (size != null && size[1] > height) {
+                    width = Math.min(size[0], 3840);
+                    height = Math.min(size[1], 2160);
+                }
+            }
+        }
+
         return new Point(width, height);
     }
 

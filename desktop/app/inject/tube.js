@@ -539,6 +539,12 @@
       // settings.videoScale: pixels of the panel per unit of the page, where the page isn't drawn one to one
       // (a 4K Samsung TV lays the page out 1920 wide)
       var needed = Math.min(window.innerHeight, window.innerWidth * 9 / 16) * 0.92 * (Number(settings.videoScale) || 1);
+      // Not above what this device was seen to play smoothly (see checkFrames)
+      var cap = getHeightCap();
+      var allowed = levels.filter(function (level) {
+        return LEVEL_HEIGHTS[level] <= cap;
+      });
+      if (allowed.length) levels = allowed;
       var choice = levels[0];
       for (var i = 0; i < levels.length; i++) {
         if (LEVEL_HEIGHTS[levels[i]] >= needed) choice = levels[i];
@@ -622,6 +628,65 @@
   var ticks = 0;
 
   /** Now and then while a video plays: how the device keeps up (for the log of the player) */
+  // ---------- frames dropped ----------
+
+  // "Best quality" holds the player at the top: it can't step down by itself when the device doesn't keep up.
+  // So the frames are counted here: above 1080p, more than 10% dropped over half a minute lowers the cap of this
+  // device one step (2160 -> 1440 -> 1080) for two weeks. A box whose graphics chip has to scale every 4K frame
+  // down to a 1080p screen inside the web engine may play 1440p smoothly, but not 4K.
+  var HEIGHT_CAP_KEY = "kdtube-height-cap";
+  var CAP_DAYS = 14;
+  var MAX_DROPPED = 0.1;
+  var lastFrames = null;
+
+  function getHeightCap() {
+    try {
+      var stored = JSON.parse(window.localStorage.getItem(HEIGHT_CAP_KEY) || "null");
+      if (stored && Date.now() - stored.since < CAP_DAYS * 86400000) return stored.height;
+    } catch (e) {
+      // no cap
+    }
+    return 99999;
+  }
+
+  function lowerHeightCap(height) {
+    var steps = [2160, 1440, 1080];
+    var next = 1080;
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i] < height) {
+        next = steps[i];
+        break;
+      }
+    }
+    try {
+      window.localStorage.setItem(HEIGHT_CAP_KEY, JSON.stringify({ height: next, since: Date.now() }));
+    } catch (e) {
+      // for this time only
+    }
+    diag("too heavy at " + height + "p: the cap is " + next + "p now");
+    showToast(height + "p is too much for this device: " + next + "p from now on", 5000);
+    bestQuality();
+  }
+
+  function checkFrames() {
+    if (!video || video.paused || !video.getVideoPlaybackQuality || video.playbackRate !== 1) {
+      lastFrames = null;
+      return;
+    }
+    var quality = video.getVideoPlaybackQuality();
+    var height = Math.min(video.videoWidth, video.videoHeight);
+    var now = { id: currentVideoId(), height: height, total: quality.totalVideoFrames, dropped: quality.droppedVideoFrames };
+    var last = lastFrames;
+    lastFrames = now;
+    if (!last || last.id !== now.id || last.height !== now.height || now.total < last.total || height <= 1080) return;
+    var shown = now.total - last.total;
+    var dropped = now.dropped - last.dropped;
+    if (shown >= 300 && dropped > shown * MAX_DROPPED) {
+      lastFrames = null;
+      lowerHeightCap(height);
+    }
+  }
+
   function noteFrames() {
     if (!video || video.paused || !video.getVideoPlaybackQuality) return;
     var quality = video.getVideoPlaybackQuality();
@@ -636,7 +701,10 @@
     watchForFailure();
     applyViewport();
     allowTouchDrags();
-    if (++ticks % 20 === 0) noteFrames();
+    if (++ticks % 20 === 0) {
+      noteFrames();
+      checkFrames();
+    }
   }, 1500);
   window.addEventListener("hashchange", loadSegments);
 
