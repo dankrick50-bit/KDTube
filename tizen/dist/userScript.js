@@ -1,4 +1,4 @@
-// KDTube 32.67.2 for Samsung TVs (TizenBrew module). Built by packaging/tizen/build-tizen.js: don't edit, edit the sources.
+// KDTube 32.67.3 for Samsung TVs (TizenBrew module). Built by packaging/tizen/build-tizen.js: don't edit, edit the sources.
 ;
 // KDTube for Samsung TVs (Tizen). A TizenBrew module: TizenBrew opens YouTube's TV page and runs this file
 // in it before the page's own scripts. This part gives the page scripts of KDTube (desktop/app/inject/tube.js,
@@ -398,6 +398,28 @@
         return isTypeSupported(type);
       }
     };
+
+    // The page also asks "can it play this smoothly, and does it save power?" (Media Capabilities). The engine of
+    // a TV box answers by the size of its interface (1080p) and a 4K stream would be "not smooth": the page then
+    // stays at 1080p. The answer is the one above: what the chip decodes is smooth and power efficient.
+    var capabilities = navigator.mediaCapabilities;
+    if (capabilities && typeof capabilities.decodingInfo === "function") {
+      var decodingInfo = capabilities.decodingInfo.bind(capabilities);
+      capabilities.decodingInfo = function (config) {
+        try {
+          var video = config && config.video;
+          // Protected video and sound only: as the engine says
+          if (!video || !video.contentType || config.keySystemConfiguration) return decodingInfo(config);
+          var type = video.contentType + (video.width ? "; width=" + video.width : "") + (video.height ? "; height=" + video.height : "") +
+            (video.framerate ? "; framerate=" + video.framerate : "") + (video.bitrate ? "; bitrate=" + video.bitrate : "");
+          var ok = MediaSource.isTypeSupported(type);
+          diag("smooth? " + type + " -> " + ok, true);
+          return Promise.resolve({ supported: ok, smooth: ok, powerEfficient: ok });
+        } catch (e) {
+          return decodingInfo(config);
+        }
+      };
+    }
 
     var addSourceBuffer = MediaSource.prototype.addSourceBuffer;
     MediaSource.prototype.addSourceBuffer = function (type) {

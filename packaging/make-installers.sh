@@ -95,6 +95,10 @@ cp "$WORK/apk/KDTube-$VERSION-armeabi-v7a.apk" "$OUT/Android/KDTube-android-arm3
 # the 64-bit build is the faster one there.
 cp "$WORK/apk/KDTube-$VERSION-armeabi-v7a.apk" "$OUT/FireOS/Fire-TV-Stick-4K/KDTube-fireos-firetv-stick-4k-v$VERSION-$STAMP.apk"
 cp "$WORK/apk/KDTube-$VERSION-arm64-v8a.apk" "$OUT/FireOS/Fire-HD-10-2023/KDTube-fireos-fire-hd-10-2023-v$VERSION-$STAMP.apk"
+# The ONN 4K streaming box of Walmart (2023: Amlogic S905Y4, 2 GB, Google TV): the 32-bit build. Its system is
+# 32-bit on most of these boxes, and the 32-bit app takes less of the 2 GB either way.
+mkdir -p "$OUT/Android/ONN-4K"
+cp "$WORK/apk/KDTube-$VERSION-armeabi-v7a.apk" "$OUT/Android/ONN-4K/KDTube-onn-4k-v$VERSION-$STAMP.apk"
 
 echo "== the update channel"
 # The names are fixed: the app asks for them (see the list below)

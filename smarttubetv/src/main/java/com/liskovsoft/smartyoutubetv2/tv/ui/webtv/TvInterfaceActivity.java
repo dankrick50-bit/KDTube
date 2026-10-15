@@ -11,6 +11,7 @@ import android.graphics.Point;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecInfo.VideoCapabilities;
 import android.media.MediaCodecList;
+import android.media.MediaDrm;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -87,6 +88,7 @@ public class TvInterfaceActivity extends Activity {
      * Back held this long opens the menu (the way back to the interface of the app)
      */
     private static final long BACK_HOLD_MS = 700;
+    private static final java.util.UUID WIDEVINE_UUID = new java.util.UUID(0xEDEF8BA979D64ACEL, 0xA3C827DCD51D21EDL);
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private WebView mWebView;
     private String mScript;
@@ -319,11 +321,12 @@ public class TvInterfaceActivity extends Activity {
             // And no more than the chip decodes, per kind of video
             settings.put("codecLimits", getHardwareCodecLimits());
             settings.put("touchScroll", true);
-            // Protected video: "no", although Android has the module for it. A device that says yes is
-            // given the protected copy of ordinary videos too, and that one is limited to 720p here
-            // (seen on a Fire HD 10: the same song, 1080p unprotected, 720p protected).
-            // The price: films that YouTube sells or rents don't play in this interface.
-            settings.put("protection", false);
+            // Protected video. A device that says yes is given the protected copy of ordinary videos too.
+            // On a tablet that copy was limited to 720p (seen on a Fire HD 10: the same song, 1080p unprotected,
+            // 720p protected): "no" there. A TV box with the hardware level of Widevine (L1: the ONN 4K, Fire TV,
+            // Google TV) gets the protected copies in full resolution, and YouTube sends some videos only
+            // protected now: "yes" there, or those don't play at all.
+            settings.put("protection", isProtectedPlaybackWanted());
             // The kinds of video the chip of this device doesn't decode: the page shouldn't choose them
             settings.put("blockCodecs", getSoftwareOnlyCodecs());
         } catch (JSONException e) {
@@ -434,6 +437,36 @@ public class TvInterfaceActivity extends Activity {
      */
     private static boolean isKnownSize(String mimeType, int[] size) {
         return !"video/x-vnd.on2.vp9".equals(mimeType) || DeviceHelpers.isVP9ResolutionSupported(size[1]);
+    }
+
+    /**
+     * A TV device whose Widevine runs in the chip (L1)
+     */
+    private boolean isProtectedPlaybackWanted() {
+        return getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK) && "L1".equals(getWidevineLevel());
+    }
+
+    private static String getWidevineLevel() {
+        if (Build.VERSION.SDK_INT < 18) {
+            return null;
+        }
+
+        MediaDrm drm = null;
+
+        try {
+            drm = new MediaDrm(WIDEVINE_UUID);
+            return drm.getPropertyString("securityLevel");
+        } catch (Exception e) { // UnsupportedSchemeException, IllegalStateException
+            return null;
+        } finally {
+            if (drm != null) {
+                if (Build.VERSION.SDK_INT >= 28) {
+                    drm.close();
+                } else {
+                    drm.release();
+                }
+            }
+        }
     }
 
     private static boolean hasHardwareDecoder(String mimeType) {
